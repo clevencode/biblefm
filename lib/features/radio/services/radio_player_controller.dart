@@ -1,13 +1,12 @@
 import 'dart:async';
-import 'dart:math';
-
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:just_audio_background/just_audio_background.dart';
-import 'package:meu_app/core/audio/audio_runtime_config.dart';
-import 'package:meu_app/core/constants/stream_config.dart';
+import 'package:meu_app/features/radio/services/audio_source_manager.dart';
+import 'package:meu_app/features/radio/services/retry_policy.dart';
+import 'package:meu_app/features/radio/services/session_timer.dart';
+import 'package:meu_app/features/radio/services/stall_detector.dart';
 
 const _noStateChange = Object();
 
@@ -69,7 +68,7 @@ class RadioPlayerState {
   );
 }
 
-class RadioPlayerController extends StateNotifier<RadioPlayerState> {
+class RadioPlayerController extends Notifier<RadioPlayerState> {
   static const Duration _minActionInterval = Duration(milliseconds: 450);
   static const Duration _recoveryWindow = Duration(minutes: 1);
   static final AudioPlayer _sharedPlayer = AudioPlayer(
@@ -90,24 +89,12 @@ class RadioPlayerController extends StateNotifier<RadioPlayerState> {
   bool _hasPlaybackAttempted = false;
   bool _isSwitchingSource = false;
   Future<void>? _sourceLock;
-  final List<Uri> _streamPool = kRadioStreamCandidateUrls
-      .map(Uri.parse)
-      .toList(growable: false);
-  final Map<String, int> _endpointPenalty = <String, int>{};
-  Uri? _activeStreamUri;
-  int _endpointCursor = 0;
-  final Random _random = Random();
-  Timer? _stallWatchdog;
-  Timer? _sessionTicker;
-  Duration _sessionElapsed = Duration.zero;
-  DateTime? _sessionTickAt;
-  Duration _lastPosition = Duration.zero;
-  DateTime? _lastProgressAt;
-  Duration _lastBufferedPosition = Duration.zero;
-  DateTime? _lastBufferedProgressAt;
+  late final AudioSourceManager _audioSourceManager;
+  late RetryPolicy _retryPolicy;
+  StallDetector? _stallDetector;
+  SessionTimer? _sessionTimer;
   bool _isRecovering = false;
   bool _resumeAfterInterruption = false;
-  int _stallSignals = 0;
   DateTime? _lastRecoveryAt;
   BufferingProfile _bufferingProfile = BufferingProfile.stable;
   DateTime _recoveryWindowStart = DateTime.now();
@@ -134,9 +121,31 @@ class RadioPlayerController extends StateNotifier<RadioPlayerState> {
 
   int get _retryAttempts => _bufferingProfile == BufferingProfile.stable ? 5 : 4;
 
-  RadioPlayerController()
-      : super(RadioPlayerState.initial) {
+  @override
+  RadioPlayerState build() {
+    state = RadioPlayerState.initial;
     _player = _sharedPlayer;
+    _audioSourceManager = AudioSourceManager();
+    _retryPolicy = RetryPolicy(maxAttempts: _retryAttempts);
+    _sessionTimer = SessionTimer(
+      shouldRunForLifecycle: (lifecycle) =>
+          lifecycle == RadioPlaybackLifecycle.playing,
+      onTick: (elapsed) {
+        state = state.copyWith(elapsed: elapsed);
+      },
+    );
+    _stallDetector = StallDetector(
+      player: _player,
+      getLifecycle: () => state.lifecycle,
+      getStallThreshold: () => _stallThreshold,
+      getWatchdogTick: () => _watchdogTick,
+      getStallSignalsBeforeRecover: () => _stallSignalsBeforeRecover,
+      onStallDetected: () => _recoverFromStall(reason: 'watchdog'),
+    );
+
+    ref.listen<BufferingProfile>(bufferingProfileProvider, (_, next) {
+      setBufferingProfile(next);
+    });
 
     _playerStateSub = _player.playerStateStream.listen((playerState) {
       final processing = playerState.processingState;
@@ -173,8 +182,8 @@ class RadioPlayerController extends StateNotifier<RadioPlayerState> {
         errorMessage: errorMessageUpdate,
       );
 
-      _syncStallWatchdog(lifecycle);
-      _syncSessionClock(lifecycle);
+      _stallDetector?.syncWatchdog();
+      _sessionTimer?.sync(lifecycle);
     });
 
     _eventSub = _player.playbackEventStream.listen(
@@ -196,27 +205,17 @@ class RadioPlayerController extends StateNotifier<RadioPlayerState> {
           maxPeriod: const Duration(milliseconds: 900),
         )
         .listen((position) {
-      if (position < _lastPosition) {
-        _lastPosition = position;
-        _lastProgressAt = DateTime.now();
-      } else if (position > _lastPosition) {
-        _lastProgressAt = DateTime.now();
-        _lastPosition = position;
-      }
+      _stallDetector?.onPositionUpdate(position);
     });
 
-    _bufferedPositionSub = _player.bufferedPositionStream.listen((buffered) {
-      if (buffered < _lastBufferedPosition) {
-        _lastBufferedPosition = buffered;
-        _lastBufferedProgressAt = DateTime.now();
-      } else if (buffered > _lastBufferedPosition) {
-        _lastBufferedPosition = buffered;
-        _lastBufferedProgressAt = DateTime.now();
-      }
+    _bufferedPositionSub =
+        _player.bufferedPositionStream.listen((buffered) {
+      _stallDetector?.onBufferedPositionUpdate(buffered);
     });
 
     unawaited(_bindAudioSessionEvents());
     unawaited(_bootstrapAutoPlay());
+    return state;
   }
 
   Future<void> _bindAudioSessionEvents() async {
@@ -269,12 +268,18 @@ class RadioPlayerController extends StateNotifier<RadioPlayerState> {
   void setBufferingProfile(BufferingProfile profile) {
     if (_bufferingProfile == profile) return;
     _bufferingProfile = profile;
-    _stallSignals = 0;
-    _stallWatchdog?.cancel();
-    _stallWatchdog = null;
+    _stallDetector?.dispose();
+    _stallDetector = StallDetector(
+      player: _player,
+      getLifecycle: () => state.lifecycle,
+      getStallThreshold: () => _stallThreshold,
+      getWatchdogTick: () => _watchdogTick,
+      getStallSignalsBeforeRecover: () => _stallSignalsBeforeRecover,
+      onStallDetected: () => _recoverFromStall(reason: 'watchdog'),
+    );
     _lastRecoveryAt = null;
     _resetRecoveryWindow();
-    _syncStallWatchdog(state.lifecycle);
+    _stallDetector?.syncWatchdog();
   }
 
   Future<void> _bootstrapAutoPlay() async {
@@ -298,37 +303,18 @@ class RadioPlayerController extends StateNotifier<RadioPlayerState> {
 
     final completer = Completer<void>();
     _sourceLock = completer.future;
-    Uri? selectedBaseUri;
-
     try {
       _isSwitchingSource = true;
-      selectedBaseUri = _selectEndpoint(forceRotate: forceRefresh);
-      final liveUri = selectedBaseUri.replace(queryParameters: {
-        ...selectedBaseUri.queryParameters,
-        't': DateTime.now().millisecondsSinceEpoch.toString(),
-      });
-      final source = AudioRuntimeConfig.backgroundEnabled
-          ? AudioSource.uri(
-              liveUri,
-              tag: const MediaItem(
-                id: 'biblefm-live',
-                title: 'Bible FM • En direct',
-                artist: 'Écoutez où que vous soyez',
-                album: 'Bible FM',
-                extras: {'isLive': true},
-              ),
-            )
-          : AudioSource.uri(liveUri);
-
-      await _player.setAudioSource(
-        source,
-        preload: true,
+      await _audioSourceManager.configureSource(
+        _player,
+        forceRefresh: forceRefresh,
       );
-      _activeStreamUri = selectedBaseUri;
       _sourceConfigured = true;
       completer.complete();
     } catch (e, st) {
-      _registerEndpointFailure(selectedBaseUri ?? _activeStreamUri);
+      _audioSourceManager.registerEndpointFailure(
+        _audioSourceManager.activeStreamUri,
+      );
       _sourceConfigured = false;
       debugPrint('Falha ao configurar source: $e');
       debugPrint(st.toString());
@@ -376,11 +362,13 @@ class RadioPlayerController extends StateNotifier<RadioPlayerState> {
     if (!_allowActionNow()) return;
     if (state.isBuffering) return;
     try {
+      _sessionTimer?.reset();
       _resetRecoveryWindow();
       state = state.copyWith(
         lifecycle: RadioPlaybackLifecycle.reconnecting,
         errorMessage: null,
         isLiveMode: true,
+        elapsed: Duration.zero,
       );
       _isSwitchingSource = true;
       await _player.stop();
@@ -400,12 +388,8 @@ class RadioPlayerController extends StateNotifier<RadioPlayerState> {
 
   Future<void> stopForAppExit() async {
     try {
-      _stallWatchdog?.cancel();
-      _stallWatchdog = null;
-      _sessionTicker?.cancel();
-      _sessionTicker = null;
-      _sessionTickAt = null;
-      _sessionElapsed = Duration.zero;
+      _stallDetector?.dispose();
+      _sessionTimer?.reset();
       await _player.stop();
       state = state.copyWith(
         lifecycle: RadioPlaybackLifecycle.idle,
@@ -422,41 +406,39 @@ class RadioPlayerController extends StateNotifier<RadioPlayerState> {
   Future<void> _playWithRetry({int? maxAttempts}) async {
     _hasPlaybackAttempted = true;
     state = state.copyWith(errorMessage: null);
-    final attempts = maxAttempts ?? _retryAttempts;
+    _retryPolicy = RetryPolicy(maxAttempts: maxAttempts ?? _retryAttempts);
 
-    for (var attempt = 1; attempt <= attempts; attempt++) {
-      try {
-        await _player.play();
-        _registerEndpointSuccess(_activeStreamUri);
-        _recoveriesInWindow = 0;
-        _stallSignals = 0;
-        _lastProgressAt = DateTime.now();
-        _lastBufferedProgressAt = DateTime.now();
-        state = state.copyWith(lifecycle: RadioPlaybackLifecycle.playing);
-        return;
-      } catch (e, st) {
-        debugPrint('Tentativa $attempt de play falhou: $e');
-        debugPrint(st.toString());
-        _registerEndpointFailure(_activeStreamUri);
-        if (attempt == attempts) {
-          _errorController.add(e);
-          state = state.copyWith(
-            lifecycle: RadioPlaybackLifecycle.error,
-            errorMessage: 'Erreur au démarrage du flux. Vérifiez votre connexion.',
+    try {
+      await _retryPolicy.execute(
+        () async {
+          await _player.play();
+          _audioSourceManager.registerEndpointSuccess(
+            _audioSourceManager.activeStreamUri,
           );
-          return;
-        }
-        try {
+          _recoveriesInWindow = 0;
+          state = state.copyWith(lifecycle: RadioPlaybackLifecycle.playing);
+        },
+        onFailure: (attempt, error, st) async {
+          debugPrint('Tentativa $attempt de play falhou: $error');
+          debugPrint(st.toString());
+          _audioSourceManager.registerEndpointFailure(
+            _audioSourceManager.activeStreamUri,
+          );
           _sourceConfigured = false;
-          await _configureSource(forceRefresh: true);
-        } catch (_) {
-          // Continua com backoff; o proximo ciclo tenta novamente.
-        }
-        final exponential = 180 * (1 << (attempt - 1));
-        final baseMs = exponential.clamp(180, 2000);
-        final jitterMs = _random.nextInt(180);
-        await Future<void>.delayed(Duration(milliseconds: baseMs + jitterMs));
-      }
+          try {
+            await _configureSource(forceRefresh: true);
+          } catch (_) {
+            // Continua com backoff; o proximo ciclo tenta novamente.
+          }
+        },
+      );
+    } catch (e) {
+      _errorController.add(e);
+      state = state.copyWith(
+        lifecycle: RadioPlaybackLifecycle.error,
+        errorMessage:
+            'Erreur au démarrage du flux. Vérifiez votre connexion.',
+      );
     }
   }
 
@@ -468,78 +450,6 @@ class RadioPlayerController extends StateNotifier<RadioPlayerState> {
     }
     _lastActionAt = now;
     return true;
-  }
-
-  void _syncStallWatchdog(RadioPlaybackLifecycle lifecycle) {
-    final watching = lifecycle == RadioPlaybackLifecycle.preparing ||
-        lifecycle == RadioPlaybackLifecycle.buffering ||
-        lifecycle == RadioPlaybackLifecycle.reconnecting ||
-        lifecycle == RadioPlaybackLifecycle.playing;
-
-    if (!watching) {
-      _stallWatchdog?.cancel();
-      _stallWatchdog = null;
-      return;
-    }
-
-    _lastProgressAt ??= DateTime.now();
-    _lastBufferedProgressAt ??= DateTime.now();
-    _stallWatchdog ??= Timer.periodic(_watchdogTick, (_) {
-      if (_isSwitchingSource || _isRecovering) return;
-      final lifecycleNow = state.lifecycle;
-
-      final now = DateTime.now();
-      final elapsedSinceProgress = now.difference(_lastProgressAt!);
-      final elapsedSinceBufferedProgress = now.difference(_lastBufferedProgressAt!);
-      final isStalledWhilePlaying =
-          lifecycleNow == RadioPlaybackLifecycle.playing &&
-          _player.playing &&
-          _player.processingState == ProcessingState.ready &&
-          elapsedSinceProgress >= _stallThreshold &&
-          elapsedSinceBufferedProgress >= _stallThreshold;
-      final isStalledWhileBuffering =
-          (lifecycleNow == RadioPlaybackLifecycle.preparing ||
-              lifecycleNow == RadioPlaybackLifecycle.buffering ||
-              lifecycleNow == RadioPlaybackLifecycle.reconnecting) &&
-          elapsedSinceProgress >= _stallThreshold &&
-          elapsedSinceBufferedProgress >= _stallThreshold;
-
-      if (isStalledWhilePlaying || isStalledWhileBuffering) {
-        _stallSignals++;
-      } else {
-        _stallSignals = 0;
-      }
-
-      if (_stallSignals >= _stallSignalsBeforeRecover) {
-        _stallSignals = 0;
-        debugPrint('Watchdog detectou stall no stream');
-        unawaited(_recoverFromStall(reason: 'watchdog'));
-      }
-    });
-  }
-
-  void _syncSessionClock(RadioPlaybackLifecycle lifecycle) {
-    final shouldRun = lifecycle == RadioPlaybackLifecycle.playing ||
-        lifecycle == RadioPlaybackLifecycle.preparing ||
-        lifecycle == RadioPlaybackLifecycle.buffering ||
-        lifecycle == RadioPlaybackLifecycle.reconnecting;
-
-    if (!shouldRun) {
-      _sessionTicker?.cancel();
-      _sessionTicker = null;
-      _sessionTickAt = null;
-      return;
-    }
-
-    _sessionTickAt ??= DateTime.now();
-    _sessionTicker ??= Timer.periodic(const Duration(seconds: 1), (_) {
-      final now = DateTime.now();
-      final last = _sessionTickAt ?? now;
-      final diff = now.difference(last);
-      _sessionTickAt = now;
-      _sessionElapsed += diff;
-      state = state.copyWith(elapsed: _sessionElapsed);
-    });
   }
 
   Future<void> _recoverFromStall({String reason = 'unknown'}) async {
@@ -558,6 +468,7 @@ class RadioPlayerController extends StateNotifier<RadioPlayerState> {
     }
     _lastRecoveryAt = now;
     _isRecovering = true;
+    _stallDetector?.updateRecovering(isRecovering: true);
     try {
       debugPrint('Iniciando recuperacao de stall ($reason)');
       state = state.copyWith(
@@ -565,12 +476,12 @@ class RadioPlayerController extends StateNotifier<RadioPlayerState> {
         errorMessage: 'Reconnexion au flux...',
       );
       _isSwitchingSource = true;
-      _registerEndpointFailure(_activeStreamUri);
+      _audioSourceManager.registerEndpointFailure(
+        _audioSourceManager.activeStreamUri,
+      );
       await _player.stop();
       await _configureSource(forceRefresh: true);
       await _playWithRetry();
-      _lastProgressAt = DateTime.now();
-      _lastBufferedProgressAt = DateTime.now();
     } catch (e, st) {
       debugPrint('Falha na recuperacao de stall: $e');
       debugPrint(st.toString());
@@ -578,6 +489,7 @@ class RadioPlayerController extends StateNotifier<RadioPlayerState> {
     } finally {
       _isRecovering = false;
       _isSwitchingSource = false;
+      _stallDetector?.updateRecovering(isRecovering: false);
     }
   }
 
@@ -588,40 +500,6 @@ class RadioPlayerController extends StateNotifier<RadioPlayerState> {
       errorMessage: 'Échec du flux. Tentative de reconnexion...',
     );
     unawaited(_recoverFromStall(reason: 'central_error_handler'));
-  }
-
-  Uri _selectEndpoint({required bool forceRotate}) {
-    if (_streamPool.length == 1) return _streamPool.first;
-
-    final candidates = forceRotate && _activeStreamUri != null
-        ? _streamPool.where((uri) => uri != _activeStreamUri).toList()
-        : _streamPool;
-    final minPenalty = candidates
-        .map((uri) => _endpointPenalty[uri.toString()] ?? 0)
-        .reduce(min);
-    final healthiest = candidates
-        .where((uri) => (_endpointPenalty[uri.toString()] ?? 0) == minPenalty)
-        .toList(growable: false);
-    final chosen = healthiest[_endpointCursor % healthiest.length];
-    _endpointCursor++;
-    return chosen;
-  }
-
-  void _registerEndpointFailure(Uri? uri) {
-    if (uri == null) return;
-    final key = uri.toString();
-    _endpointPenalty[key] = (_endpointPenalty[key] ?? 0) + 1;
-  }
-
-  void _registerEndpointSuccess(Uri? uri) {
-    if (uri == null) return;
-    final key = uri.toString();
-    final current = _endpointPenalty[key] ?? 0;
-    if (current <= 1) {
-      _endpointPenalty.remove(key);
-    } else {
-      _endpointPenalty[key] = current - 1;
-    }
   }
 
   bool _consumeRecoverySlot() {
@@ -642,10 +520,9 @@ class RadioPlayerController extends StateNotifier<RadioPlayerState> {
     _recoveriesInWindow = 0;
   }
 
-  @override
-  void dispose() {
-    _stallWatchdog?.cancel();
-    _sessionTicker?.cancel();
+  void disposeController() {
+    _stallDetector?.dispose();
+    _sessionTimer?.dispose();
     _positionSub?.cancel();
     _bufferedPositionSub?.cancel();
     _playerStateSub?.cancel();
@@ -654,19 +531,12 @@ class RadioPlayerController extends StateNotifier<RadioPlayerState> {
     _becomingNoisySub?.cancel();
     _errorSub?.cancel();
     _errorController.close();
-    super.dispose();
   }
 }
 
-final radioPlayerProvider =
-    StateNotifierProvider<RadioPlayerController, RadioPlayerState>(
-  (ref) {
-    final controller = RadioPlayerController();
-    ref.listen<BufferingProfile>(bufferingProfileProvider, (_, next) {
-      controller.setBufferingProfile(next);
-    });
-    return controller;
-  },
+final radioPlayerControllerProvider =
+    NotifierProvider<RadioPlayerController, RadioPlayerState>(
+  RadioPlayerController.new,
 );
 
 final bufferingProfileProvider =

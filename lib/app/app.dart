@@ -65,7 +65,9 @@ class _AppLifecycleAudioGuardState
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.detached) {
-      unawaited(ref.read(radioPlayerProvider.notifier).stopForAppExit());
+      unawaited(
+        ref.read(radioPlayerControllerProvider.notifier).stopForAppExit(),
+      );
     }
   }
 

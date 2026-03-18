@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:meu_app/features/radio/services/radio_bridge_providers.dart';
 import 'package:meu_app/features/radio/services/radio_player_controller.dart';
 import 'package:meu_app/features/radio/widgets/play_button.dart';
 
@@ -19,11 +20,15 @@ class RadioPlayerPage extends ConsumerWidget {
     final panelA = isDark
         ? const Color(0xF7151820)
         : const Color(0xF7FFFFFF);
-    final panelB = isDark
-        ? const Color(0xEB10131A)
-        : const Color(0xEBF8FAFC);
-    final state = ref.watch(radioPlayerProvider);
-    final notifier = ref.read(radioPlayerProvider.notifier);
+    final panelB =
+        isDark ? const Color(0xEB10131A) : const Color(0xEBF8FAFC);
+
+    final lifecycle = ref.watch(radioLifecycleProvider);
+    final elapsed = ref.watch(radioElapsedProvider);
+    final errorMessage = ref.watch(radioErrorProvider);
+    final isLiveMode = ref.watch(radioIsLiveProvider);
+    final isPlaying = ref.watch(radioIsPlayingProvider);
+    final notifier = ref.read(radioPlayerControllerProvider.notifier);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -113,7 +118,9 @@ class RadioPlayerPage extends ConsumerWidget {
                         BibleFmCover(
                           scale: scale,
                           isActive:
-                              state.isLiveMode || state.isPlaying || state.isBuffering,
+                              isLiveMode ||
+                                  isPlaying ||
+                                  _isBufferingLifecycle(lifecycle),
                         ),
                         SizedBox(height: (isCompactHeight ? 14 : 22) * scale),
                         Center(
@@ -162,13 +169,14 @@ class RadioPlayerPage extends ConsumerWidget {
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     _PlaybackStatusChip(
-                                      isPlaying: state.isPlaying,
-                                      isBuffering: state.isBuffering,
-                                      isLiveMode: state.isLiveMode,
+                                      isPlaying: isPlaying,
+                                      isBuffering:
+                                          _isBufferingLifecycle(lifecycle),
+                                      isLiveMode: isLiveMode,
                                       scale: scale,
                                     ),
                                     SizedBox(height: (isCompactHeight ? 16 : 24) * scale),
-                                    DurationLabel(elapsed: state.elapsed, scale: scale),
+                                    DurationLabel(elapsed: elapsed, scale: scale),
                                     SizedBox(height: 6 * scale),
                                   ],
                                 ),
@@ -176,17 +184,20 @@ class RadioPlayerPage extends ConsumerWidget {
                             ),
                           ),
                         ),
-                        if (state.errorMessage != null)
+                        if (errorMessage != null)
                           Padding(
-                            padding: const EdgeInsets.fromLTRB(8, 14, 8, 0),
-                            child: Text(
-                              state.errorMessage!,
-                              style: GoogleFonts.dmSans(
-                                fontSize: 14 * scale,
-                                fontWeight: FontWeight.w700,
-                                color: scheme.error,
-                              ),
-                              textAlign: TextAlign.center,
+                            padding: EdgeInsets.fromLTRB(
+                              sidePadding,
+                              14 * scale,
+                              sidePadding,
+                              0,
+                            ),
+                            child: _ErrorBanner(
+                              message: errorMessage,
+                              scale: scale,
+                              onRetry: () {
+                                notifier.togglePlayPause();
+                              },
                             ),
                           ),
                         SizedBox(
@@ -197,14 +208,14 @@ class RadioPlayerPage extends ConsumerWidget {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             LiveIconButton(
-                              isLiveMode: state.isLiveMode,
+                              isLiveMode: isLiveMode,
                               onLiveTap: notifier.goLive,
                               scale: scale,
                             ),
                             SizedBox(height: (isCompactHeight ? 18 : 24) * scale),
                             PlayButton(
-                              isPlaying: state.isPlaying,
-                              isLoading: state.isBuffering,
+                              isPlaying: isPlaying,
+                              isLoading: _isBufferingLifecycle(lifecycle),
                               onTap: notifier.togglePlayPause,
                               size: playButtonSize,
                             ),
@@ -221,6 +232,98 @@ class RadioPlayerPage extends ConsumerWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+bool _isBufferingLifecycle(RadioPlaybackLifecycle lifecycle) {
+  return lifecycle == RadioPlaybackLifecycle.preparing ||
+      lifecycle == RadioPlaybackLifecycle.buffering ||
+      lifecycle == RadioPlaybackLifecycle.reconnecting;
+}
+
+class _ErrorBanner extends StatelessWidget {
+  const _ErrorBanner({
+    required this.message,
+    required this.scale,
+    required this.onRetry,
+  });
+
+  final String message;
+  final double scale;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: 14 * scale,
+          vertical: 10 * scale,
+        ),
+        decoration: BoxDecoration(
+          color: (isDark ? scheme.errorContainer : scheme.error)
+              .withValues(alpha: isDark ? 0.28 : 0.1),
+          borderRadius: BorderRadius.circular(14 * scale),
+          border: Border.all(
+            color: scheme.error.withValues(alpha: 0.65),
+            width: 1 * scale,
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.error_outline_rounded,
+              color: scheme.error,
+              size: 18 * scale,
+            ),
+            SizedBox(width: 10 * scale),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    message,
+                    style: GoogleFonts.dmSans(
+                      fontSize: 13 * scale,
+                      fontWeight: FontWeight.w700,
+                      color: scheme.error,
+                    ),
+                  ),
+                  SizedBox(height: 4 * scale),
+                  Text(
+                    'Vérifiez votre connexion ou réessayez.',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 11 * scale,
+                      fontWeight: FontWeight.w500,
+                      color: scheme.onSurface.withValues(alpha: 0.7),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(width: 12 * scale),
+            TextButton(
+              onPressed: onRetry,
+              style: TextButton.styleFrom(
+                foregroundColor: scheme.error,
+                textStyle: GoogleFonts.dmSans(
+                  fontSize: 12 * scale,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.4 * scale,
+                ),
+              ),
+              child: const Text('RÉESSAYER'),
+            ),
+          ],
+        ),
       ),
     );
   }

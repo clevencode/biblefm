@@ -36,6 +36,7 @@ dependencies:
   just_audio_background: ^0.0.1-beta.13
   flutter_riverpod: ^2.5.1
   audio_session: ^0.1.25
+  flutter_soloud: ^2.0.4
 
 dev_dependencies:
   flutter_test:

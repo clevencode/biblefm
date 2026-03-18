@@ -6,8 +6,7 @@ import 'package:meu_app/core/constants/app_colors.dart';
 
 /// Visualizer simples em barras para indicar atividade de audio.
 ///
-/// Como o stream nao expõe FFT/PCM via `audioplayers`, esta versao
-/// usa animacao procedural sincronizada ao estado de reproducao.
+/// Esta versao usa animacao procedural sincronizada ao estado de reproducao.
 class AudioVisualizer extends StatefulWidget {
   const AudioVisualizer({
     super.key,
