@@ -25,18 +25,29 @@ enum BufferingProfile {
   ultra,
 }
 
+enum LiveTransitionStatus {
+  idle,
+  started,
+  confirmed,
+  failed,
+}
+
 class RadioPlayerState {
   const RadioPlayerState({
     required this.lifecycle,
     required this.elapsed,
     required this.errorMessage,
     required this.isLiveMode,
+    required this.isLiveIntent,
+    required this.liveTransitionStatus,
   });
 
   final RadioPlaybackLifecycle lifecycle;
   final Duration elapsed;
   final String? errorMessage;
   final bool isLiveMode;
+  final bool isLiveIntent;
+  final LiveTransitionStatus liveTransitionStatus;
 
   bool get isPlaying => lifecycle == RadioPlaybackLifecycle.playing;
   bool get isBuffering =>
@@ -49,6 +60,8 @@ class RadioPlayerState {
     Duration? elapsed,
     Object? errorMessage = _noStateChange,
     bool? isLiveMode,
+    bool? isLiveIntent,
+    LiveTransitionStatus? liveTransitionStatus,
   }) {
     return RadioPlayerState(
       lifecycle: lifecycle ?? this.lifecycle,
@@ -57,6 +70,9 @@ class RadioPlayerState {
           ? this.errorMessage
           : errorMessage as String?,
       isLiveMode: isLiveMode ?? this.isLiveMode,
+      isLiveIntent: isLiveIntent ?? this.isLiveIntent,
+      liveTransitionStatus:
+          liveTransitionStatus ?? this.liveTransitionStatus,
     );
   }
 
@@ -65,6 +81,8 @@ class RadioPlayerState {
     elapsed: Duration.zero,
     errorMessage: null,
     isLiveMode: false,
+    isLiveIntent: false,
+    liveTransitionStatus: LiveTransitionStatus.idle,
   );
 }
 
@@ -100,6 +118,8 @@ class RadioPlayerController extends Notifier<RadioPlayerState> {
   DateTime _recoveryWindowStart = DateTime.now();
   int _recoveriesInWindow = 0;
   DateTime? _lastActionAt;
+  ProcessingState _cachedProcessingState = ProcessingState.idle;
+  bool _cachedPlaying = false;
 
   Duration get _stallThreshold => _bufferingProfile == BufferingProfile.stable
       ? const Duration(seconds: 12)
@@ -120,6 +140,52 @@ class RadioPlayerController extends Notifier<RadioPlayerState> {
       _bufferingProfile == BufferingProfile.stable ? 3 : 5;
 
   int get _retryAttempts => _bufferingProfile == BufferingProfile.stable ? 5 : 4;
+
+  /// Single source of truth for the lifecycle exposed to the UI.
+  ///
+  /// This method centralizes lifecycle decisions and prevents duplicated
+  /// mappings scattered across streams and callbacks.
+  RadioPlaybackLifecycle get _computedLifecycle {
+    // Highest priority: user explicitly asked for live transition.
+    if (state.isLiveIntent &&
+        (_isSwitchingSource || state.liveTransitionStatus == LiveTransitionStatus.started)) {
+      return RadioPlaybackLifecycle.reconnecting;
+    }
+
+    if (_isRecovering) {
+      return RadioPlaybackLifecycle.reconnecting;
+    }
+
+    final processing = _cachedProcessingState;
+    final playing = _cachedPlaying;
+
+    if (processing == ProcessingState.loading) {
+      return RadioPlaybackLifecycle.preparing;
+    }
+
+    if (processing == ProcessingState.buffering) {
+      return RadioPlaybackLifecycle.buffering;
+    }
+
+    // "Real playing" happens only when the player reports ready+playing.
+    if (playing && processing == ProcessingState.ready) {
+      return RadioPlaybackLifecycle.playing;
+    }
+
+    if (!playing && processing == ProcessingState.ready) {
+      return RadioPlaybackLifecycle.paused;
+    }
+
+    // Idle state can be "error" when we know we attempted playback.
+    if (processing == ProcessingState.idle &&
+        _hasPlaybackAttempted &&
+        !_isSwitchingSource &&
+        !_isRecovering) {
+      return RadioPlaybackLifecycle.error;
+    }
+
+    return RadioPlaybackLifecycle.idle;
+  }
 
   @override
   RadioPlayerState build() {
@@ -151,26 +217,15 @@ class RadioPlayerController extends Notifier<RadioPlayerState> {
       final processing = playerState.processingState;
       final playing = playerState.playing;
 
-      RadioPlaybackLifecycle lifecycle;
-      if (_isSwitchingSource) {
-        lifecycle = RadioPlaybackLifecycle.reconnecting;
-      } else if (processing == ProcessingState.loading) {
-        lifecycle = RadioPlaybackLifecycle.preparing;
-      } else if (processing == ProcessingState.buffering) {
-        lifecycle = RadioPlaybackLifecycle.buffering;
-      } else if (playing && processing == ProcessingState.ready) {
-        lifecycle = RadioPlaybackLifecycle.playing;
-      } else if (!playing && processing == ProcessingState.ready) {
-        lifecycle = RadioPlaybackLifecycle.paused;
-      } else {
-        lifecycle = RadioPlaybackLifecycle.idle;
-      }
+      _cachedProcessingState = processing;
+      _cachedPlaying = playing;
+
+      final lifecycle = _computedLifecycle;
 
       Object? errorMessageUpdate = _noStateChange;
-      if (processing == ProcessingState.idle &&
-          _hasPlaybackAttempted &&
-          !_isSwitchingSource &&
-          !_isRecovering) {
+      if (lifecycle == RadioPlaybackLifecycle.error &&
+          !(state.liveTransitionStatus == LiveTransitionStatus.failed &&
+              state.isLiveMode == false)) {
         errorMessageUpdate = 'Échec du chargement du flux';
       } else if (lifecycle == RadioPlaybackLifecycle.playing ||
           lifecycle == RadioPlaybackLifecycle.paused) {
@@ -336,6 +391,8 @@ class RadioPlayerController extends Notifier<RadioPlayerState> {
       state = state.copyWith(
         lifecycle: RadioPlaybackLifecycle.paused,
         isLiveMode: false,
+        isLiveIntent: false,
+        liveTransitionStatus: LiveTransitionStatus.idle,
       );
       return;
     }
@@ -346,6 +403,8 @@ class RadioPlayerController extends Notifier<RadioPlayerState> {
         lifecycle: RadioPlaybackLifecycle.preparing,
         errorMessage: null,
         isLiveMode: false,
+        isLiveIntent: false,
+        liveTransitionStatus: LiveTransitionStatus.idle,
       );
       await _configureSource();
       await _playWithRetry();
@@ -354,36 +413,110 @@ class RadioPlayerController extends Notifier<RadioPlayerState> {
         lifecycle: RadioPlaybackLifecycle.error,
         errorMessage: 'Erreur lors de la préparation du flux',
         isLiveMode: false,
+        isLiveIntent: false,
+        liveTransitionStatus: LiveTransitionStatus.failed,
       );
     }
   }
 
+  /// Orchestrates an atomic "LIVE" transition.
+  ///
+  /// Responsibilities:
+  /// - Debounce + anti-buffering guards
+  /// - Prepare UI/state immediately
+  /// - Execute stop -> configure -> play in a safe sequence
+  /// - Confirm or fail, without duplicating lifecycle logic
   Future<void> goLive() async {
     if (!_allowActionNow()) return;
     if (state.isBuffering) return;
+    if (state.isLiveIntent &&
+        state.liveTransitionStatus == LiveTransitionStatus.started) {
+      return;
+    }
+
+    _prepareForLive();
+
     try {
-      _sessionTimer?.reset();
-      _resetRecoveryWindow();
-      state = state.copyWith(
-        lifecycle: RadioPlaybackLifecycle.reconnecting,
-        errorMessage: null,
-        isLiveMode: true,
-        elapsed: Duration.zero,
-      );
-      _isSwitchingSource = true;
+      await _executeLiveTransition();
+      await _handleLiveSuccess();
+    } catch (e) {
+      await _handleLiveFailure(e);
+    }
+  }
+
+  void _prepareForLive() {
+    // Reset counter deterministically at the moment the user intent is set.
+    _sessionTimer?.reset();
+    _resetRecoveryWindow();
+
+    state = state.copyWith(
+      errorMessage: null,
+      isLiveMode: true,
+      isLiveIntent: true,
+      liveTransitionStatus: LiveTransitionStatus.started,
+      elapsed: Duration.zero,
+    );
+  }
+
+  Future<void> _executeLiveTransition() async {
+    // Prevent the stall detector from triggering during the transition.
+    _stallDetector?.updateSwitching(isSwitching: true);
+    try {
       await _player.stop();
       await _configureSource(forceRefresh: true);
-      _isSwitchingSource = false;
-      await _playWithRetry();
-    } catch (_) {
-      state = state.copyWith(
-        lifecycle: RadioPlaybackLifecycle.error,
-        errorMessage: 'Erreur lors de la reconnexion en direct',
-        isLiveMode: false,
+
+      _hasPlaybackAttempted = true;
+      _retryPolicy = RetryPolicy(maxAttempts: _retryAttempts);
+
+      await _retryPolicy.execute(
+        () async {
+          await _player.play();
+          _audioSourceManager.registerEndpointSuccess(
+            _audioSourceManager.activeStreamUri,
+          );
+          _recoveriesInWindow = 0;
+        },
+        onFailure: (attempt, error, st) async {
+          debugPrint('LIVE retry $attempt failed: $error');
+          debugPrint(st.toString());
+          _audioSourceManager.registerEndpointFailure(
+            _audioSourceManager.activeStreamUri,
+          );
+          _sourceConfigured = false;
+          // Reconfigure to pick a healthier endpoint before retrying play.
+          await _configureSource(forceRefresh: true);
+        },
       );
     } finally {
-      _isSwitchingSource = false;
+      _stallDetector?.updateSwitching(isSwitching: false);
     }
+  }
+
+  Future<void> _handleLiveSuccess() async {
+    // Confirm the user intent. From this point, _computedLifecycle can
+    // reflect the real player state (playing/paused/etc).
+    state = state.copyWith(
+      isLiveIntent: false,
+      liveTransitionStatus: LiveTransitionStatus.confirmed,
+      errorMessage: null,
+    );
+
+    // Analytics hook (debug-only placeholder).
+    debugPrint('LIVE confirmed');
+  }
+
+  Future<void> _handleLiveFailure(Object error) async {
+    // Freeze timer and fallback to non-live UI state.
+    _sessionTimer?.sync(RadioPlaybackLifecycle.paused);
+
+    state = state.copyWith(
+      errorMessage: 'Erreur lors de la reconnexion en direct',
+      isLiveMode: false,
+      isLiveIntent: false,
+      liveTransitionStatus: LiveTransitionStatus.failed,
+    );
+
+    debugPrint('LIVE failure: $error');
   }
 
   Future<void> stopForAppExit() async {
@@ -407,6 +540,7 @@ class RadioPlayerController extends Notifier<RadioPlayerState> {
     _hasPlaybackAttempted = true;
     state = state.copyWith(errorMessage: null);
     _retryPolicy = RetryPolicy(maxAttempts: maxAttempts ?? _retryAttempts);
+    final startedLiveIntent = state.isLiveIntent;
 
     try {
       await _retryPolicy.execute(
@@ -416,7 +550,12 @@ class RadioPlayerController extends Notifier<RadioPlayerState> {
             _audioSourceManager.activeStreamUri,
           );
           _recoveriesInWindow = 0;
-          state = state.copyWith(lifecycle: RadioPlaybackLifecycle.playing);
+          state = state.copyWith(
+            lifecycle: RadioPlaybackLifecycle.playing,
+            liveTransitionStatus: startedLiveIntent
+                ? LiveTransitionStatus.confirmed
+                : LiveTransitionStatus.idle,
+          );
         },
         onFailure: (attempt, error, st) async {
           debugPrint('Tentativa $attempt de play falhou: $error');
@@ -438,6 +577,10 @@ class RadioPlayerController extends Notifier<RadioPlayerState> {
         lifecycle: RadioPlaybackLifecycle.error,
         errorMessage:
             'Erreur au démarrage du flux. Vérifiez votre connexion.',
+        isLiveIntent: false,
+        liveTransitionStatus: startedLiveIntent
+            ? LiveTransitionStatus.failed
+            : LiveTransitionStatus.idle,
       );
     }
   }
