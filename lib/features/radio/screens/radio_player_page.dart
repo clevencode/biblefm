@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:meu_app/core/network/network_connectivity_provider.dart';
@@ -31,36 +32,50 @@ class RadioPlayerPage extends ConsumerStatefulWidget {
 }
 
 class _RadioPlayerPageState extends ConsumerState<RadioPlayerPage> {
+  /// Arranque automático adiado: abriu sem rede e ainda não tocou play.
+  bool _deferAutostartUntilOnline = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       unawaited(ensureAndroidPostNotificationsPermission());
-    });
-    _schedulePlaybackAfterFirstFrame();
-  }
-
-  /// Espera um frame e a primeira leitura de rede antes do arranque automático.
-  void _schedulePlaybackAfterFirstFrame() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_maybeAutoStartAfterConnectivity());
     });
   }
 
+  /// Primeira leitura de rede; se estiver offline, marca arranque quando voltar a haver rede.
   Future<void> _maybeAutoStartAfterConnectivity() async {
     if (!mounted) return;
-    await ref.read(networkOfflineProvider.notifier).initialConnectivityFuture;
+    await ref.read(networkLinkProvider.notifier).initialConnectivityFuture;
     if (!mounted) return;
-    if (ref.read(networkOfflineProvider)) return;
+    if (ref.read(networkOfflineProvider)) {
+      _deferAutostartUntilOnline = true;
+      return;
+    }
+    _deferAutostartUntilOnline = false;
     await ref.read(radioPlayerUiProvider.notifier).autoStartLivePlayback();
   }
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<bool>(networkOfflineProvider, (previous, next) {
-      if (previous == true && next == false) {
-        ref.read(radioPlayerUiProvider.notifier).onConnectivityRestored();
+    ref.listen<RadioNetworkLink>(networkLinkProvider, (previous, next) {
+      final wasOffline = previous == RadioNetworkLink.offline;
+      final onlineNow = next != RadioNetworkLink.offline;
+      if (wasOffline && onlineNow) {
+        final radio = ref.read(radioPlayerUiProvider.notifier);
+        radio.onConnectivityRestored();
+        if (_deferAutostartUntilOnline) {
+          _deferAutostartUntilOnline = false;
+          unawaited(radio.autoStartLivePlayback());
+        }
+      }
+      if (next == RadioNetworkLink.wifi &&
+          previous != null &&
+          previous != RadioNetworkLink.wifi &&
+          previous != RadioNetworkLink.unknown) {
+        HapticFeedback.selectionClick();
       }
     });
 
@@ -74,7 +89,8 @@ class _RadioPlayerPageState extends ConsumerState<RadioPlayerPage> {
     final timerColor = scheme.onSurface;
 
     final showStreamLoading = isBufferingUiLifecycle(ui.lifecycle);
-    final isOffline = ref.watch(networkOfflineProvider);
+    final networkLink = ref.watch(networkLinkProvider);
+    final isOffline = networkLink.isOffline;
 
     return Semantics(
       container: true,
@@ -181,11 +197,40 @@ class _RadioPlayerPageState extends ConsumerState<RadioPlayerPage> {
                                   scale,
                                 ),
                               ),
-                              child: _BibleFmHeader(
-                                scale: scale,
-                                titleColor: titleColor,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _BibleFmHeader(
+                                    scale: scale,
+                                    titleColor: titleColor,
+                                  ),
+                                  if (networkLink.showsTransportHint) ...[
+                                    SizedBox(height: AppSpacing.gHalf(scale)),
+                                    _NetworkTransportHint(
+                                      link: networkLink,
+                                      scale: scale,
+                                    ),
+                                  ],
+                                ],
                               ),
                             ),
+                            // Erro da fonte fixo acima da área rolável em offline
+                            // (evita que desapareça ao deslocar o cartão / conteúdo).
+                            if (isOffline && ui.errorMessage != null)
+                              Padding(
+                                padding: EdgeInsets.fromLTRB(
+                                  sidePadding,
+                                  0,
+                                  sidePadding,
+                                  AppSpacing.g(2, scale),
+                                ),
+                                child: _ErrorBanner(
+                                  message: ui.errorMessage!,
+                                  scale: scale,
+                                  onRetry: player.retryAfterError,
+                                ),
+                              ),
                             Expanded(
                               child: Padding(
                                 padding: EdgeInsets.only(bottom: barReserve),
@@ -257,8 +302,8 @@ class _RadioPlayerPageState extends ConsumerState<RadioPlayerPage> {
                                                   titleColor: titleColor,
                                                   timerColor: timerColor,
                                                 ),
-                                                if (ui.errorMessage !=
-                                                    null) ...[
+                                                if (ui.errorMessage != null &&
+                                                    !isOffline) ...[
                                                   SizedBox(
                                                     height: AppSpacing.g(
                                                       3,
@@ -301,13 +346,19 @@ class _RadioPlayerPageState extends ConsumerState<RadioPlayerPage> {
                             scale: scale,
                             playVisualSize: playVisualSize,
                             narrowMobile: isNarrow,
+                            isOffline: isOffline,
+                            playbackLifecycle: ui.lifecycle,
                             isPlaying: ui.isPlaying,
                             isPaused:
                                 ui.lifecycle == UiPlaybackLifecycle.paused,
                             isBuffering: isBufferingUiLifecycle(ui.lifecycle),
+                            isPreparing:
+                                ui.lifecycle == UiPlaybackLifecycle.preparing,
                             isLiveMode: ui.isLiveMode,
-                            onCentralTap: () => unawaited(player.centralTap()),
-                            onLiveTap: ui.canTapLive ? player.liveTap : null,
+                            onTransportTap: () => unawaited(player.transportTap()),
+                            onLiveTap: isOffline
+                                ? null
+                                : (ui.canTapLive ? player.liveTap : null),
                           ),
                         ),
                       ),
@@ -365,6 +416,82 @@ class _BibleFmHeader extends StatelessWidget {
         const Spacer(),
         AppThemeModeToggle(layoutScale: scale),
       ],
+    );
+  }
+}
+
+/// Indicação discreta do tipo de ligação (destaque ao Wi‑Fi e aviso em dados móveis).
+class _NetworkTransportHint extends StatelessWidget {
+  const _NetworkTransportHint({
+    required this.link,
+    required this.scale,
+  });
+
+  final RadioNetworkLink link;
+  final double scale;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    late final IconData icon;
+    late final String label;
+    late final Color tint;
+    switch (link) {
+      case RadioNetworkLink.wifi:
+        icon = Icons.wifi_rounded;
+        label = 'Wi‑Fi ligado';
+        tint = scheme.primary;
+        break;
+      case RadioNetworkLink.cellular:
+        icon = Icons.signal_cellular_alt_rounded;
+        label = 'Dados móveis — pode consumir tráfego';
+        tint = scheme.tertiary;
+        break;
+      case RadioNetworkLink.ethernet:
+        icon = Icons.settings_ethernet_rounded;
+        label = 'Ethernet';
+        tint = scheme.primary;
+        break;
+      case RadioNetworkLink.vpn:
+        icon = Icons.vpn_key_rounded;
+        label = 'VPN activa';
+        tint = scheme.onSurfaceVariant;
+        break;
+      case RadioNetworkLink.other:
+        icon = Icons.podcasts_rounded;
+        label = 'Rede ligada';
+        tint = scheme.onSurfaceVariant;
+        break;
+      case RadioNetworkLink.unknown:
+      case RadioNetworkLink.offline:
+        return const SizedBox.shrink();
+    }
+
+    return Semantics(
+      label: label,
+      child: Row(
+        children: [
+          Icon(
+            icon,
+            size: AppSpacing.g(2, scale) * 1.1,
+            color: tint.withValues(alpha: 0.92),
+          ),
+          SizedBox(width: AppSpacing.gHalf(scale)),
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                fontSize: AppTypeScale.label * scale * 0.95,
+                fontWeight: FontWeight.w500,
+                color: scheme.onSurfaceVariant.withValues(alpha: 0.92),
+                height: 1.25,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -3,22 +3,28 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:meu_app/core/theme/app_spacing.dart';
 import 'package:meu_app/core/theme/app_theme.dart';
+import 'package:meu_app/features/radio/screens/player_ui_models.dart';
 import 'package:meu_app/features/radio/widgets/broadcast_signal_icon.dart';
 
 /// Botão de modo direto em formato **pílula** (barra de transporte).
 class LiveModeButton extends StatelessWidget {
   const LiveModeButton({
     super.key,
+    required this.playbackLifecycle,
     required this.isLiveMode,
     required this.isPaused,
+    required this.isOffline,
     required this.onPressed,
     required this.scale,
     required this.size,
     this.narrowMobile = false,
   });
 
+  /// Ordem: idle → carregar → play/pause; direct só após haver sessão de leitura.
+  final UiPlaybackLifecycle playbackLifecycle;
   final bool isLiveMode;
   final bool isPaused;
+  final bool isOffline;
   final VoidCallback? onPressed;
   final double scale;
 
@@ -55,19 +61,28 @@ class LiveModeButton extends StatelessWidget {
     final canTap = onPressed != null;
     String semanticsLabel;
     String tooltipMsg;
-    if (isLiveMode && isPaused && canTap) {
+    if (isOffline) {
+      semanticsLabel = 'Direct indisponível sem rede';
+      tooltipMsg = 'Sem ligação à Internet';
+    } else if (isBufferingUiLifecycle(playbackLifecycle)) {
+      semanticsLabel = 'Directo após o fluxo estabilizar';
+      tooltipMsg = 'Aguarde o fluxo estabilizar antes do directo';
+    } else if (playbackLifecycle == UiPlaybackLifecycle.idle) {
+      semanticsLabel = 'Directo após iniciar a leitura';
+      tooltipMsg = 'Inicie a leitura antes de activar o directo';
+    } else if (isLiveMode && !isPaused && !canTap) {
+      semanticsLabel = 'Direct actif';
+      tooltipMsg = 'Direct actif';
+    } else if (isLiveMode && isPaused && canTap) {
       semanticsLabel = 'Rattraper le direct par paliers';
       tooltipMsg =
           'Rapprocher le compteur du direct sans remettre à zéro (répéter après pause)';
-    } else if (isLiveMode && !isPaused) {
-      semanticsLabel = 'Direct actif';
-      tooltipMsg = 'Direct actif';
-    } else if (!canTap) {
-      semanticsLabel = 'Direct : mettre la lecture en pause pour activer';
-      tooltipMsg = 'Mettre la lecture en pause pour activer l’écoute du direct';
-    } else {
+    } else if (canTap) {
       semanticsLabel = 'Passer en écoute du direct';
       tooltipMsg = 'Écouter le direct';
+    } else {
+      semanticsLabel = 'Direct : mettre la lecture en pause pour activer';
+      tooltipMsg = 'Mettre la lecture en pause pour activer l’écoute du direct';
     }
 
     final radius = size / 2;
@@ -114,7 +129,9 @@ class LiveModeButton extends StatelessWidget {
         child: child,
       ),
     );
-    if (!canTap && !isLiveMode) {
+    if (isOffline) {
+      pill = Opacity(opacity: 0.65, child: pill);
+    } else if (!canTap && !isLiveMode) {
       pill = Opacity(opacity: 0.5, child: pill);
     }
 

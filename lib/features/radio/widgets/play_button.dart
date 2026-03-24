@@ -8,19 +8,27 @@ class PlayButton extends StatefulWidget {
     super.key,
     required this.isPlaying,
     required this.isLoading,
+    this.isPreparing = false,
     required this.onTap,
     this.size = 96,
     this.enabled = true,
+    this.isOffline = false,
     this.layoutScale,
   });
 
   final bool isPlaying;
   final bool isLoading;
+
+  /// Quando [isLoading] é verdadeiro: fase [preparing] vs [buffering] (textos distintos).
+  final bool isPreparing;
   final VoidCallback? onTap;
   final double size;
 
   /// Quando false, o toque é ignorado (ex.: operação bloqueada por outra camada).
   final bool enabled;
+
+  /// Sem rede e sem leitura activa: explica tooltip / acessibilidade.
+  final bool isOffline;
 
   /// Escala mobile-first para sombra (8pt); opcional.
   final double? layoutScale;
@@ -58,9 +66,17 @@ class _PlayButtonState extends State<PlayButton> {
 
     final String a11yLabel;
     final String tooltipMsg;
-    if (widget.isLoading) {
-      a11yLabel = 'Connexion au flux en cours';
-      tooltipMsg = 'Connexion au flux…';
+    if (widget.isOffline && !widget.isPlaying && !widget.isLoading) {
+      a11yLabel = 'Lecture indisponible sans connexion réseau';
+      tooltipMsg = 'Sem ligação à Internet';
+    } else if (widget.isLoading) {
+      if (widget.isPreparing) {
+        a11yLabel = 'A preparar o fluxo de áudio';
+        tooltipMsg = 'A preparar o fluxo…';
+      } else {
+        a11yLabel = 'A ligar ao fluxo';
+        tooltipMsg = 'A ligar ao fluxo…';
+      }
     } else if (widget.isPlaying) {
       a11yLabel = 'Mettre en pause la lecture';
       tooltipMsg = 'Pause';
