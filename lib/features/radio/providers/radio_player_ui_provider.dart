@@ -167,7 +167,14 @@ class RadioPlayerUiNotifier extends StateNotifier<RadioPlayerUiState> {
         return;
 
       case UiPlaybackLifecycle.paused:
-        _emit(state.copyWith(lifecycle: UiPlaybackLifecycle.playing));
+        _emit(
+          state.copyWith(
+            lifecycle: UiPlaybackLifecycle.playing,
+            // Retomar pelo play volta para differe; só o botão live ativa live.
+            isLiveMode: false,
+            livePulseActive: false,
+          ),
+        );
         return;
 
       case UiPlaybackLifecycle.idle:

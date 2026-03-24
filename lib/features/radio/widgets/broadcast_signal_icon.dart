@@ -31,18 +31,19 @@ class _BroadcastSignalPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final c = Offset(size.width / 2, size.height / 2);
     final r = math.min(size.width, size.height) / 2;
+    final strokeWidth = math.max(1.8, r * 0.14);
     final stroke = Paint()
       ..color = color
       ..style = PaintingStyle.stroke
-      ..strokeWidth = math.max(1.2, r * 0.09)
+      ..strokeWidth = strokeWidth
       ..strokeCap = StrokeCap.round;
 
-    final dotR = r * 0.12;
+    final dotR = r * 0.17;
     canvas.drawCircle(c, dotR, Paint()..color = color);
 
     const sweep = math.pi * 0.48;
     for (var i = 1; i <= 3; i++) {
-      final arcR = dotR + r * 0.15 * i;
+      final arcR = dotR + r * 0.17 * i;
       final rect = Rect.fromCircle(center: c, radius: arcR);
       // Esquerda e direita do ponto (estilo (( • ))).
       canvas.drawArc(rect, math.pi - sweep / 2, sweep, false, stroke);

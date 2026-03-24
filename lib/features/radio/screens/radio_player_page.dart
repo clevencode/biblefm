@@ -534,6 +534,7 @@ class _MainPlayerCard extends StatelessWidget {
                 LivePulsingIndicator(
                   scale: scale,
                   isEnDirect: isEnDirect,
+                  isPlaying: isPlaying,
                   pulseEnabled: livePulseActive,
                   onTap: onLiveIndicatorTap,
                 ),
@@ -665,22 +666,9 @@ class _PlaybackStatusChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isListening = isPlaying && !isBuffering;
-    final isLive = isListening && isLiveMode;
-    // Pas de libellé « Connexion » : la barre de progression en haut suffit.
-    final String label;
-    if (isLive) {
-      label = 'En direct';
-    } else if (isListening) {
-      label = 'Différé';
-    } else if (isBuffering) {
-      label = isLiveMode ? 'En direct' : 'Différé';
-    } else {
-      label = 'En pause';
-    }
-
-    final scheme = Theme.of(context).colorScheme;
-    final listeningDotColor =
-        isDark ? scheme.primary : const Color(0xFF2E7D32);
+    final label = isListening
+        ? (isLiveMode ? 'En direct' : 'Différé')
+        : 'En pause';
 
     return Container(
       padding: AppSpacing.insetSymmetric(
@@ -695,17 +683,6 @@ class _PlaybackStatusChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (isListening && !isLive) ...[
-            Container(
-              width: AppSpacing.gHalf(scale),
-              height: AppSpacing.gHalf(scale),
-              decoration: BoxDecoration(
-                color: listeningDotColor,
-                shape: BoxShape.circle,
-              ),
-            ),
-            SizedBox(width: AppSpacing.g(1, scale)),
-          ],
           Text(
             label.toUpperCase(),
             style: GoogleFonts.dmSans(

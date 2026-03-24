@@ -34,8 +34,10 @@ class LiveModeButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final iconColor = isDark ? scheme.onSurface : const Color(0xFF141414);
-    // Pílula alinhada ao tema escuro (superfícies + contorno).
-    final fillColor = isDark ? scheme.surfaceContainerHighest : Colors.white;
+    // Fora do modo live, pílula sem preenchimento (somente contorno).
+    final fillColor = !isLiveMode
+        ? Colors.transparent
+        : (isDark ? scheme.surfaceContainerHighest : Colors.white);
     final borderColor = isDark
         ? scheme.outline.withValues(alpha: 0.55)
         : Colors.black.withValues(alpha: 0.18);
@@ -78,13 +80,15 @@ class LiveModeButton extends StatelessWidget {
       color: fillColor,
       borderRadius: BorderRadius.circular(radius),
       border: Border.all(color: borderColor, width: 1),
-      boxShadow: [
-        BoxShadow(
-          color: scheme.shadow.withValues(alpha: isDark ? 0.38 : 0.1),
-          blurRadius: AppSpacing.g(2, scale),
-          offset: Offset(0, AppSpacing.g(1, scale)),
-        ),
-      ],
+      boxShadow: !isLiveMode
+          ? const []
+          : [
+              BoxShadow(
+                color: scheme.shadow.withValues(alpha: isDark ? 0.38 : 0.1),
+                blurRadius: AppSpacing.g(2, scale),
+                offset: Offset(0, AppSpacing.g(1, scale)),
+              ),
+            ],
     );
 
     final child = BroadcastSignalIcon(color: iconColor, size: iconSize);

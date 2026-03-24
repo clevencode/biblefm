@@ -2,13 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:meu_app/core/theme/app_spacing.dart';
 import 'package:meu_app/core/theme/app_theme.dart';
 
-/// Indicador «ao vivo»: vermelho **só** em [isEnDirect]; fora disso cinza.
+/// Indicador «ao vivo»: vermelho em direct, verde em differe (a tocar),
+/// cinza em pausa/idle.
 /// [pulseEnabled] controla o pulso (só en direct).
 class LivePulsingIndicator extends StatefulWidget {
   const LivePulsingIndicator({
     super.key,
     required this.scale,
     required this.isEnDirect,
+    required this.isPlaying,
     required this.pulseEnabled,
     this.onTap,
     this.tooltip,
@@ -16,6 +18,7 @@ class LivePulsingIndicator extends StatefulWidget {
 
   final double scale;
   final bool isEnDirect;
+  final bool isPlaying;
   final bool pulseEnabled;
   final VoidCallback? onTap;
 
@@ -97,12 +100,17 @@ class _LivePulsingIndicatorState extends State<LivePulsingIndicator>
     final s = widget.scale;
     final coreD = AppSpacing.g(2, s) - AppSpacing.gHalf(s) * 0.5;
     final outerSize = AppSpacing.g(4, s);
-    final idleGray = Color.lerp(
+    final differGreen = isDark
+        ? const Color(0xFF66BB6A)
+        : const Color(0xFF2E7D32);
+    final pausedGray = Color.lerp(
       scheme.outline,
       scheme.onSurfaceVariant,
       isDark ? 0.22 : 0.35,
     )!;
-    final accent = widget.isEnDirect ? _liveRed : idleGray;
+    final accent = widget.isEnDirect
+        ? _liveRed
+        : (widget.isPlaying ? differGreen : pausedGray);
     final shadowColor = widget.isEnDirect
         ? const Color(0x33E53935)
         : scheme.shadow.withValues(alpha: isDark ? 0.35 : 0.12);
@@ -119,7 +127,10 @@ class _LivePulsingIndicatorState extends State<LivePulsingIndicator>
 
     final String a11yLabel;
     final String? a11yHint;
-    if (!widget.isEnDirect) {
+    if (!widget.isEnDirect && !widget.isPlaying) {
+      a11yLabel = 'Indicateur en pause';
+      a11yHint = null;
+    } else if (!widget.isEnDirect) {
       a11yLabel = 'Indicateur différé, pas en direct';
       a11yHint = null;
     } else if (widget.onTap == null) {
