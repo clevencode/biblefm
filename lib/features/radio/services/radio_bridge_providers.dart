@@ -26,3 +26,14 @@ final radioIsPlayingProvider = Provider<bool>((ref) {
   return ref.watch(radioPlayerControllerProvider.select((s) => s.isPlaying));
 });
 
+/// True enquanto o utilizador pediu live e a transição ainda não foi confirmada.
+final radioLiveTransitionBusyProvider = Provider<bool>((ref) {
+  return ref.watch(
+    radioPlayerControllerProvider.select(
+      (s) =>
+          s.isLiveIntent &&
+          s.liveTransitionStatus == LiveTransitionStatus.started,
+    ),
+  );
+});
+

@@ -30,13 +30,13 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
 
   google_fonts: ^8.0.2
   just_audio: ^0.9.40
-  just_audio_background: ^0.0.1-beta.13
   flutter_riverpod: ^2.5.1
   audio_session: ^0.1.25
-  flutter_soloud: ^2.0.4
 
 dev_dependencies:
   flutter_test:

@@ -1,27 +1,35 @@
-import 'dart:math' as math;
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:meu_app/core/theme/app_spacing.dart';
+import 'package:meu_app/core/theme/app_theme_mode_toggle.dart';
 import 'package:meu_app/features/radio/services/radio_bridge_providers.dart';
 import 'package:meu_app/features/radio/services/radio_player_controller.dart';
-import 'package:meu_app/features/radio/widgets/play_button.dart';
+import 'package:meu_app/features/radio/utils/radio_ui_invocation.dart';
+import 'package:meu_app/features/radio/widgets/live_pulsing_indicator.dart';
+import 'package:meu_app/features/radio/widgets/radio_transport_controls.dart';
 
+/// Bible FM: layout **mobile-first** — base para telemóvel, depois tablet/paisagem.
+/// Título no topo, cartão centralizado, barra com play e live (pílula).
 class RadioPlayerPage extends ConsumerWidget {
   const RadioPlayerPage({super.key});
+
+  static const Color _timerGreenLight = Color(0xFF1A3D2E);
+  static const Color _chipGreyLight = Color(0xFFE8E8E8);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final uiAccent = scheme.primary;
-    final pageBg = isDark ? const Color(0xFF0F1115) : const Color(0xFFF5F6F8);
-    final panelA = isDark
-        ? const Color(0xF7151820)
-        : const Color(0xF7FFFFFF);
-    final panelB =
-        isDark ? const Color(0xEB10131A) : const Color(0xEBF8FAFC);
+    final pageBg =
+        isDark ? const Color(0xFF121212) : const Color(0xFFF5F5F5);
+    final cardColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
+    final chipGrey = isDark ? const Color(0xFF2C2C2C) : _chipGreyLight;
+    // Bandeja do contador: cinza mais claro que a pílula (contraste intencional).
+    final timerTrayColor =
+        isDark ? const Color(0xFF252525) : const Color(0xFFEEEEEE);
+    final titleColor = isDark ? scheme.onSurface : Colors.black;
+    final timerColor = isDark ? scheme.primary : _timerGreenLight;
 
     final lifecycle = ref.watch(radioLifecycleProvider);
     final elapsed = ref.watch(radioElapsedProvider);
@@ -30,208 +38,225 @@ class RadioPlayerPage extends ConsumerWidget {
     final isPlaying = ref.watch(radioIsPlayingProvider);
     final notifier = ref.read(radioPlayerControllerProvider.notifier);
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          const DecoratedBox(
-            decoration: BoxDecoration(
-              color: Colors.transparent,
-            ),
-          ),
-          DecoratedBox(
-            decoration: BoxDecoration(color: pageBg),
-          ),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: RadialGradient(
-                center: const Alignment(0, -0.2),
-                radius: 1.25,
-                colors: [
-                  uiAccent.withValues(alpha: 0.06),
-                  scheme.secondary.withValues(alpha: 0.04),
-                  Colors.transparent,
-                ],
-                stops: const [0.0, 0.35, 1.0],
-              ),
-            ),
-          ),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  (isDark ? Colors.black : Colors.white).withValues(
-                    alpha: isDark ? 0.66 : 0.66,
-                  ),
-                  Colors.transparent,
-                  (isDark ? Colors.black : Colors.white).withValues(
-                    alpha: isDark ? 0.72 : 0.72,
-                  ),
-                ],
-                stops: const [0.0, 0.5, 1.0],
-              ),
-            ),
-          ),
-          SafeArea(
+    final showStreamLoading = _isBufferingLifecycle(lifecycle);
+
+    return Semantics(
+      container: true,
+      label: 'Bible FM, lecteur radio',
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            _PageBackground(color: pageBg, isDark: isDark),
+            SafeArea(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final isCompactHeight = constraints.maxHeight < 720;
-                final isNarrow = constraints.maxWidth < 360;
-                final isLandscape = constraints.maxWidth > constraints.maxHeight;
-                final scale = _mobileScale(
+                final w = constraints.maxWidth;
+                final h = constraints.maxHeight;
+                // Mobile-first: base mobile, depois overrides para tablet/landscape.
+                final isCompact = AppLayoutBreakpoints.isCompactHeight(h);
+                final isNarrow = AppLayoutBreakpoints.isNarrow(w);
+
+                final scale = AppSpacing.mobileLayoutScale(
                   constraints.biggest.shortestSide,
                 );
-                final sidePadding = (isNarrow ? 12.0 : 16.0) * scale;
-                final panelPadding = (isNarrow ? 16.0 : 20.0) * scale;
-                final panelWidth = isLandscape
-                    ? constraints.maxWidth * 0.74
-                    : (constraints.maxWidth >= 600 ? 460.0 : 440.0) * scale;
-                final playButtonSize = isNarrow
-                    ? 104.0 * scale
-                    : isCompactHeight
-                        ? 116.0 * scale
-                        : 126.0 * scale;
-                final bottomInset = MediaQuery.paddingOf(context).bottom;
-                final distributeSections =
-                    !isCompactHeight && constraints.maxHeight >= 760;
+                final sidePadding = AppSpacing.g(
+                  AppSpacing.marginContentHorizontalSteps(narrow: isNarrow),
+                  scale,
+                );
+                final transportSidePadding = AppSpacing.g(
+                  AppSpacing.marginTransportHorizontalSteps(narrow: isNarrow),
+                  scale,
+                );
+                final panelPaddingH = AppSpacing.g(
+                  AppSpacing.marginPanelInnerHorizontalSteps(narrow: isNarrow),
+                  scale,
+                );
+                final panelWidth = AppLayoutBreakpoints.maxPanelWidth(w, h, scale);
 
-                return SingleChildScrollView(
-                  padding: EdgeInsets.fromLTRB(
-                    sidePadding,
-                    8,
-                    sidePadding,
-                    isCompactHeight ? 10 : 16,
+                final playButtonSize = AppSpacing.g(
+                  AppSpacing.playControlDiameterSteps(
+                    narrow: isNarrow,
+                    compactHeight: isCompact,
                   ),
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minHeight: constraints.maxHeight - (isCompactHeight ? 18 : 24),
-                    ),
-                    child: Column(
-                      mainAxisAlignment: distributeSections
-                          ? MainAxisAlignment.spaceBetween
-                          : MainAxisAlignment.start,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        BibleFmCover(
-                          scale: scale,
-                          isActive:
-                              isLiveMode ||
-                                  isPlaying ||
-                                  _isBufferingLifecycle(lifecycle),
-                        ),
-                        SizedBox(height: (isCompactHeight ? 14 : 22) * scale),
-                        Center(
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(24 * scale),
-                            child: BackdropFilter(
-                              filter: ImageFilter.blur(
-                                sigmaX: 10 * scale,
-                                sigmaY: 10 * scale,
-                              ),
-                              child: Container(
-                                width: constraints.maxWidth.clamp(
-                                  280.0,
-                                  panelWidth,
-                                ),
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: panelPadding,
-                                  vertical: (isCompactHeight ? 18 : 26) * scale,
-                                ),
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
-                                    colors: [
-                                      panelA,
-                                      panelB,
-                                    ],
-                                  ),
-                                  borderRadius: BorderRadius.circular(24 * scale),
-                                  border: Border.all(
-                                    color: (isDark ? uiAccent : scheme.outline).withValues(
-                                      alpha: isDark ? 0.42 : 0.78,
-                                    ),
-                                    width: 1.1 * scale,
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: (isDark ? Colors.black : Colors.black87)
-                                          .withValues(alpha: isDark ? 0.18 : 0.12),
-                                      blurRadius: 30 * scale,
-                                      offset: Offset(0, 12 * scale),
-                                    ),
-                                  ],
-                                ),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    _PlaybackStatusChip(
-                                      isPlaying: isPlaying,
-                                      isBuffering:
-                                          _isBufferingLifecycle(lifecycle),
-                                      isLiveMode: isLiveMode,
-                                      scale: scale,
-                                    ),
-                                    SizedBox(height: (isCompactHeight ? 16 : 24) * scale),
-                                    DurationLabel(elapsed: elapsed, scale: scale),
-                                    SizedBox(height: 6 * scale),
-                                  ],
-                                ),
-                              ),
+                  scale,
+                );
+                final bottomInset = MediaQuery.paddingOf(context).bottom;
+                final playVisualSize = playButtonSize.clamp(
+                  AppSpacing.g(AppSpacing.playControlDiameterMinSteps, scale),
+                  AppSpacing.g(AppSpacing.playControlDiameterMaxSteps, scale),
+                );
+                final postButtonGap = AppSpacing.g(
+                  AppSpacing.transportStackGapSteps(
+                    compactHeight: isCompact,
+                  ),
+                  scale,
+                );
+                final overlayContentHeight =
+                    playVisualSize + postButtonGap;
+                final barReserve = overlayContentHeight +
+                    bottomInset +
+                    AppSpacing.g(
+                      AppSpacing.transportBottomMarginSteps,
+                      scale,
+                    );
+
+                return Stack(
+                  clipBehavior: Clip.none,
+                  fit: StackFit.expand,
+                  children: [
+                    if (showStreamLoading)
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        child: IgnorePointer(
+                          child: LinearProgressIndicator(
+                            minHeight: 3,
+                            color: scheme.primary,
+                            backgroundColor:
+                                scheme.surfaceContainerHighest.withValues(
+                              alpha: 0.35,
                             ),
                           ),
                         ),
-                        if (errorMessage != null)
+                      ),
+                    Positioned.fill(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
                           Padding(
                             padding: EdgeInsets.fromLTRB(
                               sidePadding,
-                              14 * scale,
+                              AppSpacing.g(
+                                AppSpacing.sectionVerticalPaddingSteps,
+                                scale,
+                              ),
                               sidePadding,
-                              0,
+                              AppSpacing.g(
+                                AppSpacing.sectionVerticalPaddingSteps,
+                                scale,
+                              ),
                             ),
-                            child: _ErrorBanner(
-                              message: errorMessage,
+                            child: _BibleFmHeader(
                               scale: scale,
-                              onRetry: () {
-                                notifier.togglePlayPause();
-                              },
+                              titleColor: titleColor,
                             ),
                           ),
-                        SizedBox(
-                          height: (distributeSections ? 10 : (isCompactHeight ? 18 : 28)) *
-                              scale,
-                        ),
-                        Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            LiveIconButton(
-                              isLiveMode: isLiveMode,
-                              onLiveTap: notifier.goLive,
-                              scale: scale,
+                          Expanded(
+                            child: Padding(
+                              padding: EdgeInsets.only(bottom: barReserve),
+                              child: Padding(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: sidePadding,
+                                  vertical: AppSpacing.g(
+                                    AppSpacing.sectionVerticalPaddingSteps,
+                                    scale,
+                                  ),
+                                ),
+                                child: Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      _MainPlayerCard(
+                                        width: w.clamp(
+                                          AppSpacing.panelWidthCompact,
+                                          panelWidth,
+                                        ),
+                                        panelPaddingH: panelPaddingH,
+                                        cardColor: cardColor,
+                                        isDark: isDark,
+                                        scale: scale,
+                                        isCompactHeight: isCompact,
+                                        narrowMobile: isNarrow,
+                                        isPlaying: isPlaying,
+                                        isBuffering:
+                                            _isBufferingLifecycle(lifecycle),
+                                        isLiveMode: isLiveMode,
+                                        chipGrey: chipGrey,
+                                        timerTrayColor: timerTrayColor,
+                                        titleColor: titleColor,
+                                        timerColor: timerColor,
+                                        elapsed: elapsed,
+                                      ),
+                                      if (errorMessage != null) ...[
+                                        SizedBox(
+                                            height: AppSpacing.g(3, scale)),
+                                        _ErrorBanner(
+                                          message: errorMessage,
+                                          scale: scale,
+                                          onRetry: () =>
+                                              scheduleRadioPlayerAction(
+                                            () =>
+                                                notifier.togglePlayPause(),
+                                            debugLabel: 'retryAfterError',
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ),
                             ),
-                            SizedBox(height: (isCompactHeight ? 18 : 24) * scale),
-                            PlayButton(
-                              isPlaying: isPlaying,
-                              isLoading: _isBufferingLifecycle(lifecycle),
-                              onTap: notifier.togglePlayPause,
-                              size: playButtonSize,
-                            ),
-                          ],
-                        ),
-                        SizedBox(
-                          height: ((isCompactHeight ? 10 : 18) * scale) + bottomInset,
-                        ),
-                      ],
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
+                    Positioned(
+                      left: transportSidePadding,
+                      right: transportSidePadding,
+                      bottom: bottomInset +
+                          AppSpacing.g(
+                            AppSpacing.transportBottomMarginSteps,
+                            scale,
+                          ),
+                      child: Material(
+                        color: Colors.transparent,
+                        // Por último no Stack: toques na barra têm prioridade.
+                        child: RadioTransportControls(
+                          scale: scale,
+                          playVisualSize: playVisualSize,
+                          isDark: isDark,
+                          narrowMobile: isNarrow,
+                        ),
+                      ),
+                    ),
+                  ],
                 );
               },
             ),
           ),
         ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PageBackground extends StatelessWidget {
+  const _PageBackground({required this.color, required this.isDark});
+
+  final Color color;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    // Mobile-first (referência): fundo claro sólido; gradiente só em dark.
+    if (!isDark) {
+      return DecoratedBox(decoration: BoxDecoration(color: color));
+    }
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            color,
+            const Color(0xFF0A0A0A),
+          ],
+        ),
       ),
     );
   }
@@ -241,6 +266,355 @@ bool _isBufferingLifecycle(RadioPlaybackLifecycle lifecycle) {
   return lifecycle == RadioPlaybackLifecycle.preparing ||
       lifecycle == RadioPlaybackLifecycle.buffering ||
       lifecycle == RadioPlaybackLifecycle.reconnecting;
+}
+
+class _BibleFmHeader extends StatelessWidget {
+  const _BibleFmHeader({
+    required this.scale,
+    required this.titleColor,
+  });
+
+  final double scale;
+  final Color titleColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final w = MediaQuery.sizeOf(context).width;
+    final titleFont = AppSpacing.responsiveBrandTitleFontSize(w, scale);
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: AppSpacing.gHalf(scale)),
+      child: Row(
+        children: [
+          Text(
+            'BIBLE FM',
+            style: GoogleFonts.russoOne(
+              color: titleColor,
+              fontSize: titleFont,
+              letterSpacing: AppSpacing.gHalf(scale) * 0.3,
+            ),
+          ),
+          const Spacer(),
+          AppThemeModeToggle(layoutScale: scale),
+        ],
+      ),
+    );
+  }
+}
+
+class _DigitalTimer extends StatelessWidget {
+  const _DigitalTimer({
+    required this.elapsed,
+    required this.scale,
+    required this.timerTrayColor,
+    required this.timerColor,
+    required this.captionColor,
+    required this.isPlaying,
+    required this.isBuffering,
+  });
+
+  final Duration elapsed;
+  final double scale;
+  final Color timerTrayColor;
+  final Color timerColor;
+  final Color captionColor;
+  final bool isPlaying;
+  final bool isBuffering;
+
+  @override
+  Widget build(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    final mainFontSize =
+        AppSpacing.responsiveTimerValueFontSize(width, scale);
+    final unitFontSize = AppTypeScale.label * 0.92 * scale;
+    final valueStyle = GoogleFonts.shareTechMono(
+      fontSize: mainFontSize,
+      fontWeight: FontWeight.w600,
+      letterSpacing: AppSpacing.gHalf(scale) * 0.0875,
+      color: timerColor,
+      height: 1.0,
+      fontFeatures: const [FontFeature.tabularFigures()],
+    );
+    final colonStyle = valueStyle.copyWith(
+      letterSpacing: 0,
+      fontSize: mainFontSize * 0.92,
+    );
+    final unitStyle = GoogleFonts.dmSans(
+      fontSize: unitFontSize,
+      fontWeight: FontWeight.w700,
+      letterSpacing: AppSpacing.gHalf(scale) * 0.05,
+      color: captionColor,
+      height: 1.0,
+    );
+    final captionStyle = GoogleFonts.dmSans(
+      fontSize: AppTypeScale.label * scale,
+      fontWeight: FontWeight.w600,
+      letterSpacing: AppSpacing.gHalf(scale) * 0.0875,
+      color: captionColor,
+      height: 1.25,
+    );
+
+    final d = elapsed.isNegative ? Duration.zero : elapsed;
+    final hh = d.inHours.toString().padLeft(2, '0');
+    final mm = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final ss = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    final a11y = _sessionDurationSemanticsFr(d);
+
+    final String? footerLine;
+    if (isBuffering) {
+      footerLine = 'Compteur en pause pendant la connexion';
+    } else if (!isPlaying) {
+      footerLine = 'En pause — reprends la lecture pour faire avancer le temps';
+    } else {
+      footerLine = null;
+    }
+
+    final scheme = Theme.of(context).colorScheme;
+    final timerVerticalSteps =
+        AppLayoutBreakpoints.isNarrow(MediaQuery.sizeOf(context).width)
+            ? 2
+            : 3;
+
+    return Semantics(
+      label: 'Temps d\'écoute, $a11y',
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: timerTrayColor,
+          borderRadius: AppRadii.borderRadius(AppRadii.sm, scale),
+          border: Border.all(
+            color: scheme.outline.withValues(alpha: 0.14),
+            width: 1,
+          ),
+        ),
+        child: Padding(
+          padding: AppSpacing.insetSymmetric(
+            layoutScale: scale,
+            horizontal: 2,
+            vertical: timerVerticalSteps,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  _TimerDigitColumn(
+                    value: hh,
+                    unit: 'h',
+                    layoutScale: scale,
+                    valueStyle: valueStyle,
+                    unitStyle: unitStyle,
+                  ),
+                  Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: AppSpacing.gHalf(scale),
+                    ),
+                    child: Text('.', style: colonStyle),
+                  ),
+                  _TimerDigitColumn(
+                    value: mm,
+                    unit: 'min',
+                    layoutScale: scale,
+                    valueStyle: valueStyle,
+                    unitStyle: unitStyle,
+                  ),
+                  Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: AppSpacing.gHalf(scale),
+                    ),
+                    child: Text('.', style: colonStyle),
+                  ),
+                  _TimerDigitColumn(
+                    value: ss,
+                    unit: 's',
+                    layoutScale: scale,
+                    valueStyle: valueStyle,
+                    unitStyle: unitStyle,
+                  ),
+                ],
+              ),
+              if (footerLine != null) ...[
+                SizedBox(height: AppSpacing.gHalf(scale)),
+                Text(
+                  footerLine,
+                  textAlign: TextAlign.center,
+                  style: captionStyle,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TimerDigitColumn extends StatelessWidget {
+  const _TimerDigitColumn({
+    required this.value,
+    required this.unit,
+    required this.layoutScale,
+    required this.valueStyle,
+    required this.unitStyle,
+  });
+
+  final String value;
+  final String unit;
+  final double layoutScale;
+  final TextStyle valueStyle;
+  final TextStyle unitStyle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(value, style: valueStyle),
+        SizedBox(height: AppSpacing.gHalf(layoutScale)),
+        Text(unit, style: unitStyle),
+      ],
+    );
+  }
+}
+
+String _sessionDurationSemanticsFr(Duration d) {
+  if (d.isNegative) d = Duration.zero;
+  final h = d.inHours;
+  final m = d.inMinutes.remainder(60);
+  final s = d.inSeconds.remainder(60);
+  final parts = <String>[];
+  if (h > 0) {
+    parts.add(h == 1 ? '1 heure' : '$h heures');
+  }
+  if (m > 0) {
+    parts.add(m == 1 ? '1 minute' : '$m minutes');
+  }
+  if (s > 0 || parts.isEmpty) {
+    parts.add(s == 1 ? '1 seconde' : '$s secondes');
+  }
+  return parts.join(', ');
+}
+
+class _MainPlayerCard extends StatelessWidget {
+  const _MainPlayerCard({
+    required this.width,
+    required this.panelPaddingH,
+    required this.cardColor,
+    required this.isDark,
+    required this.scale,
+    required this.isCompactHeight,
+    required this.narrowMobile,
+    required this.isPlaying,
+    required this.isBuffering,
+    required this.isLiveMode,
+    required this.chipGrey,
+    required this.timerTrayColor,
+    required this.titleColor,
+    required this.timerColor,
+    required this.elapsed,
+  });
+
+  final double width;
+  final double panelPaddingH;
+  final Color cardColor;
+  final bool isDark;
+  final double scale;
+  final bool isCompactHeight;
+  final bool narrowMobile;
+  final bool isPlaying;
+  final bool isBuffering;
+  final bool isLiveMode;
+  final Color chipGrey;
+  final Color timerTrayColor;
+  final Color titleColor;
+  final Color timerColor;
+  final Duration elapsed;
+
+  @override
+  Widget build(BuildContext context) {
+    final isLive = isPlaying && !isBuffering && isLiveMode;
+    final statusToTimerGap = AppSpacing.g(
+      AppSpacing.marginPanelInnerHorizontalSteps(narrow: narrowMobile),
+      scale,
+    );
+    const cornerPt = AppLayoutBreakpoints.playerCardCornerPt;
+    return Container(
+      width: width,
+      padding: EdgeInsets.symmetric(
+        horizontal: panelPaddingH,
+        vertical: AppSpacing.g(isCompactHeight ? 3 : 4, scale),
+      ),
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: AppRadii.borderRadius(cornerPt, scale),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(
+              alpha: isDark ? 0.35 : 0.08,
+            ),
+            blurRadius: AppSpacing.g(3, scale),
+            offset: Offset(0, AppSpacing.g(1, scale)),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (isLive)
+            Padding(
+              padding: EdgeInsets.only(
+                right: AppSpacing.gHalf(scale),
+              ),
+              child: IntrinsicHeight(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    _PlaybackStatusChip(
+                      isPlaying: isPlaying,
+                      isBuffering: isBuffering,
+                      isLiveMode: isLiveMode,
+                      scale: scale,
+                      narrowMobile: narrowMobile,
+                      chipGrey: chipGrey,
+                      labelColor: titleColor,
+                      isDark: isDark,
+                    ),
+                    LivePulsingIndicator(scale: scale),
+                  ],
+                ),
+              ),
+            )
+          else
+            Center(
+              child: _PlaybackStatusChip(
+                isPlaying: isPlaying,
+                isBuffering: isBuffering,
+                isLiveMode: isLiveMode,
+                scale: scale,
+                narrowMobile: narrowMobile,
+                chipGrey: chipGrey,
+                labelColor: titleColor,
+                isDark: isDark,
+              ),
+            ),
+          SizedBox(height: statusToTimerGap),
+          _DigitalTimer(
+            elapsed: elapsed,
+            scale: scale,
+            timerTrayColor: timerTrayColor,
+            timerColor: timerColor,
+            captionColor: titleColor.withValues(alpha: 0.64),
+            isPlaying: isPlaying,
+            isBuffering: isBuffering,
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _ErrorBanner extends StatelessWidget {
@@ -262,17 +636,18 @@ class _ErrorBanner extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: Container(
-        padding: EdgeInsets.symmetric(
-          horizontal: 14 * scale,
-          vertical: 10 * scale,
+        padding: AppSpacing.insetSymmetric(
+          layoutScale: scale,
+          horizontal: 2,
+          vertical: 1,
         ),
         decoration: BoxDecoration(
           color: (isDark ? scheme.errorContainer : scheme.error)
               .withValues(alpha: isDark ? 0.28 : 0.1),
-          borderRadius: BorderRadius.circular(14 * scale),
+          borderRadius: AppRadii.borderRadius(AppRadii.sm, scale),
           border: Border.all(
             color: scheme.error.withValues(alpha: 0.65),
-            width: 1 * scale,
+            width: 1,
           ),
         ),
         child: Row(
@@ -281,9 +656,9 @@ class _ErrorBanner extends StatelessWidget {
             Icon(
               Icons.error_outline_rounded,
               color: scheme.error,
-              size: 18 * scale,
+              size: AppSpacing.g(3, scale),
             ),
-            SizedBox(width: 10 * scale),
+            SizedBox(width: AppSpacing.g(2, scale)),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -292,16 +667,16 @@ class _ErrorBanner extends StatelessWidget {
                   Text(
                     message,
                     style: GoogleFonts.dmSans(
-                      fontSize: 13 * scale,
+                      fontSize: AppTypeScale.body * scale,
                       fontWeight: FontWeight.w700,
                       color: scheme.error,
                     ),
                   ),
-                  SizedBox(height: 4 * scale),
+                  SizedBox(height: AppSpacing.gHalf(scale)),
                   Text(
                     'Vérifiez votre connexion ou réessayez.',
                     style: GoogleFonts.dmSans(
-                      fontSize: 11 * scale,
+                      fontSize: AppTypeScale.label * scale,
                       fontWeight: FontWeight.w500,
                       color: scheme.onSurface.withValues(alpha: 0.7),
                     ),
@@ -309,15 +684,15 @@ class _ErrorBanner extends StatelessWidget {
                 ],
               ),
             ),
-            SizedBox(width: 12 * scale),
+            SizedBox(width: AppSpacing.g(2, scale)),
             TextButton(
               onPressed: onRetry,
               style: TextButton.styleFrom(
                 foregroundColor: scheme.error,
                 textStyle: GoogleFonts.dmSans(
-                  fontSize: 12 * scale,
+                  fontSize: AppTypeScale.label * scale,
                   fontWeight: FontWeight.w800,
-                  letterSpacing: 0.4 * scale,
+                  letterSpacing: AppSpacing.halfGrid * 0.1 * scale,
                 ),
               ),
               child: const Text('RÉESSAYER'),
@@ -329,233 +704,31 @@ class _ErrorBanner extends StatelessWidget {
   }
 }
 
-class BibleFmCover extends StatelessWidget {
-  const BibleFmCover({
-    super.key,
-    required this.scale,
-    required this.isActive,
-  });
-
-  final double scale;
-  final bool isActive;
-
-  @override
-  Widget build(BuildContext context) {
-    final uiAccent = Theme.of(context).colorScheme.primary;
-    final size = MediaQuery.sizeOf(context);
-    final isNarrow = size.width < 360;
-    final titleFont = ((size.width * 0.1) * scale).clamp(27.0, 42.0);
-    final iconSize = ((size.width * 0.07) * scale).clamp(20.0, 30.0);
-    final coverHeight = ((size.height * 0.11) * scale).clamp(72.0, 96.0);
-
-    return SizedBox(
-      width: double.infinity,
-      height: coverHeight,
-      child: Container(
-        width: double.infinity,
-        padding: EdgeInsets.symmetric(
-          horizontal: (isNarrow ? 16 : 22) * scale,
-          vertical: 12 * scale,
-        ),
-        decoration: BoxDecoration(
-          color: Theme.of(context).brightness == Brightness.dark
-              ? const Color(0xE6151820)
-              : Colors.white,
-          borderRadius: BorderRadius.circular(20 * scale),
-          border: Border.all(
-            color: uiAccent.withValues(alpha: Theme.of(context).brightness == Brightness.dark ? 0.5 : 0.18),
-            width: 1.2 * scale,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: uiAccent.withValues(alpha: 0.15),
-              blurRadius: 16 * scale,
-              offset: Offset(0, 6 * scale),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Text(
-              'BIBLE FM',
-              style: GoogleFonts.russoOne(
-                color: uiAccent,
-                fontSize: titleFont,
-                letterSpacing: 1.5,
-              ),
-            ),
-            const Spacer(),
-            _AnimatedEqBadge(
-              size: 38 * scale,
-              iconSize: iconSize,
-              color: uiAccent,
-              isActive: isActive,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _AnimatedEqBadge extends StatefulWidget {
-  const _AnimatedEqBadge({
-    required this.size,
-    required this.iconSize,
-    required this.color,
-    required this.isActive,
-  });
-
-  final double size;
-  final double iconSize;
-  final Color color;
-  final bool isActive;
-
-  @override
-  State<_AnimatedEqBadge> createState() => _AnimatedEqBadgeState();
-}
-
-class _AnimatedEqBadgeState extends State<_AnimatedEqBadge>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 900),
-    );
-    if (widget.isActive) {
-      _controller.repeat(reverse: true);
-    }
-  }
-
-  @override
-  void didUpdateWidget(covariant _AnimatedEqBadge oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.isActive == oldWidget.isActive) return;
-    if (widget.isActive) {
-      _controller.repeat(reverse: true);
-    } else {
-      _controller.stop();
-      _controller.value = 0;
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        final t = _controller.value;
-        final waveSize = widget.iconSize * 0.82;
-        final barWidth = math.max(2.2, waveSize * 0.12);
-        final minBar = waveSize * 0.22;
-        final maxBar = waveSize * 0.88;
-        double barHeight(double phase) {
-          if (!widget.isActive) return waveSize * 0.38;
-          final value = (math.sin((t * math.pi * 2) + phase) + 1) / 2;
-          return minBar + ((maxBar - minBar) * value);
-        }
-
-        return Container(
-          width: widget.size,
-          height: widget.size,
-          decoration: BoxDecoration(
-            color: widget.color.withValues(alpha: 0.08),
-            shape: BoxShape.circle,
-          ),
-          child: Center(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                _SpeechBar(
-                  height: barHeight(0),
-                  width: barWidth,
-                  color: widget.color,
-                ),
-                SizedBox(width: barWidth * 0.8),
-                _SpeechBar(
-                  height: barHeight(math.pi / 2),
-                  width: barWidth,
-                  color: widget.color,
-                ),
-                SizedBox(width: barWidth * 0.8),
-                _SpeechBar(
-                  height: barHeight(math.pi),
-                  width: barWidth,
-                  color: widget.color,
-                ),
-                SizedBox(width: barWidth * 0.8),
-                _SpeechBar(
-                  height: barHeight((math.pi * 3) / 2),
-                  width: barWidth,
-                  color: widget.color,
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _SpeechBar extends StatelessWidget {
-  const _SpeechBar({
-    required this.height,
-    required this.width,
-    required this.color,
-  });
-
-  final double height;
-  final double width;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 120),
-      curve: Curves.easeOut,
-      width: width,
-      height: height,
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(width),
-      ),
-    );
-  }
-}
-
 class _PlaybackStatusChip extends StatelessWidget {
   const _PlaybackStatusChip({
     required this.isPlaying,
     required this.isBuffering,
     required this.isLiveMode,
     required this.scale,
+    required this.narrowMobile,
+    required this.chipGrey,
+    required this.labelColor,
+    required this.isDark,
   });
 
   final bool isPlaying;
   final bool isBuffering;
   final bool isLiveMode;
   final double scale;
+  final bool narrowMobile;
+  final Color chipGrey;
+  final Color labelColor;
+  final bool isDark;
 
   @override
   Widget build(BuildContext context) {
-    final uiAccent = Theme.of(context).colorScheme.primary;
     final isListening = isPlaying && !isBuffering;
     final isLive = isListening && isLiveMode;
-    final color = isLive
-        ? const Color(0xFF148A37)
-        : uiAccent.withValues(alpha: 0.92);
     final label = isBuffering
         ? 'Connexion'
         : isLive
@@ -564,185 +737,45 @@ class _PlaybackStatusChip extends StatelessWidget {
                 ? 'En écoute'
                 : 'En pause';
 
+    const liveGreen = Color(0xFF2E7D32);
+
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: 12 * scale, vertical: 8 * scale),
+      padding: AppSpacing.insetSymmetric(
+        layoutScale: scale,
+        horizontal: narrowMobile ? 2 : 3,
+        vertical: narrowMobile ? 1 : 1,
+      ),
       decoration: BoxDecoration(
-        color: Theme.of(context).brightness == Brightness.dark
-            ? const Color(0xD3131620)
-            : Colors.white,
-        borderRadius: BorderRadius.circular(999 * scale),
-        border: Border.all(color: color.withValues(alpha: 0.35), width: 1 * scale),
+        color: chipGrey,
+        borderRadius: AppRadii.borderRadius(AppRadii.pill, scale),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            isBuffering ? Icons.sync_rounded : Icons.fiber_manual_record_rounded,
-            size: 14 * scale,
-            color: color,
-          ),
-          SizedBox(width: 8 * scale),
+          if (isListening && !isLive) ...[
+            Container(
+              width: AppSpacing.gHalf(scale),
+              height: AppSpacing.gHalf(scale),
+              decoration: const BoxDecoration(
+                color: liveGreen,
+                shape: BoxShape.circle,
+              ),
+            ),
+            SizedBox(width: AppSpacing.g(1, scale)),
+          ],
           Text(
             label.toUpperCase(),
             style: GoogleFonts.dmSans(
               fontWeight: FontWeight.w800,
-              fontSize: 12 * scale,
-              letterSpacing: 0.8 * scale,
-              color: color,
+              fontSize: AppTypeScale.label * scale,
+              letterSpacing: AppSpacing.gHalf(scale) * 0.22,
+              color: isDark
+                  ? labelColor.withValues(alpha: 0.92)
+                  : const Color(0xFF1A1A1A),
             ),
           ),
         ],
       ),
     );
   }
-}
-
-class LiveIconButton extends StatelessWidget {
-  const LiveIconButton({
-    super.key,
-    required this.isLiveMode,
-    required this.onLiveTap,
-    required this.scale,
-  });
-
-  final bool isLiveMode;
-  final VoidCallback onLiveTap;
-  final double scale;
-
-  @override
-  Widget build(BuildContext context) {
-    final uiAccent = Theme.of(context).colorScheme.primary;
-    final borderColor = isLiveMode
-        ? const Color(0xFFB50000)
-        : uiAccent.withValues(alpha: 0.28);
-    final backgroundColor = isLiveMode
-        ? const Color(0x66B50000)
-        : (Theme.of(context).brightness == Brightness.dark
-            ? const Color(0xE6131620)
-            : Colors.white);
-    final textColor = isLiveMode ? const Color(0xFFFF7A7A) : uiAccent;
-    final buttonSize = 46 * scale;
-
-    return Semantics(
-      button: true,
-      label: 'Mode direct',
-      child: InkWell(
-        borderRadius: BorderRadius.circular(buttonSize),
-        onTap: onLiveTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 240),
-          curve: Curves.easeOutCubic,
-          width: buttonSize,
-          height: buttonSize,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: backgroundColor,
-            border: Border.all(color: borderColor, width: 1.25 * scale),
-            boxShadow: [
-              BoxShadow(
-                color: (isLiveMode
-                        ? const Color(0x33B50000)
-                        : const Color(0x1600260F))
-                    .withValues(alpha: isLiveMode ? 0.3 : 0.12),
-                blurRadius: (isLiveMode ? 18 : 10) * scale,
-                offset: Offset(0, 4 * scale),
-              ),
-            ],
-          ),
-          child: Icon(Icons.sensors_rounded, color: textColor, size: 18 * scale),
-        ),
-      ),
-    );
-  }
-}
-
-class DurationLabel extends StatelessWidget {
-  const DurationLabel({super.key, required this.elapsed, required this.scale});
-
-  final Duration elapsed;
-  final double scale;
-
-  @override
-  Widget build(BuildContext context) {
-    final uiAccent = Theme.of(context).colorScheme.primary;
-    final width = MediaQuery.sizeOf(context).width;
-    final mainFontSize = ((width * 0.115) * scale).clamp(30.0, 48.0);
-    final hasHours = elapsed.inHours > 0;
-
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.fromLTRB(14 * scale, 12 * scale, 14 * scale, 10 * scale),
-      decoration: BoxDecoration(
-        color: Theme.of(context).brightness == Brightness.dark
-            ? const Color(0xDD11151D)
-            : Colors.white,
-        borderRadius: BorderRadius.circular(16 * scale),
-        border: Border.all(
-          color: uiAccent.withValues(
-            alpha: Theme.of(context).brightness == Brightness.dark ? 0.3 : 0.16,
-          ),
-          width: 1 * scale,
-        ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.timer_outlined,
-                size: 16 * scale,
-                color: uiAccent.withValues(alpha: 0.72),
-              ),
-              SizedBox(width: 6 * scale),
-              Text(
-                'Temps d\'écoute',
-                style: GoogleFonts.dmSans(
-                  color: uiAccent.withValues(alpha: 0.72),
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12 * scale,
-                  letterSpacing: 0.2 * scale,
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: 6 * scale),
-          Text(
-            _formatBadgeDuration(elapsed),
-            style: GoogleFonts.russoOne(
-              fontSize: mainFontSize,
-              letterSpacing: 0.8,
-              color: uiAccent,
-            ),
-          ),
-          SizedBox(height: 2 * scale),
-          Text(
-            hasHours ? 'heures : minutes : secondes' : 'minutes : secondes',
-            style: GoogleFonts.dmSans(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-              fontWeight: FontWeight.w600,
-              fontSize: 11 * scale,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-String _formatBadgeDuration(Duration d) {
-  if (d.isNegative) d = Duration.zero;
-  final hours = d.inHours;
-  final minutes = (d.inMinutes % 60).toString().padLeft(2, '0');
-  final seconds = (d.inSeconds % 60).toString().padLeft(2, '0');
-  if (hours > 0) {
-    return '${hours.toString().padLeft(2, '0')}:$minutes:$seconds';
-  }
-  return '$minutes:$seconds';
-}
-
-double _mobileScale(double shortestSide) {
-  return (shortestSide / 390).clamp(0.84, 1.12).toDouble();
 }

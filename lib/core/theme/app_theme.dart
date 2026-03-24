@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:meu_app/core/theme/app_spacing.dart';
 
+/// Temas Material 3 alinhados à grelha **8pt** ([AppSpacing], [AppRadii]).
 abstract final class AppTheme {
   static ThemeData _baseTheme(Brightness brightness) {
     final isDark = brightness == Brightness.dark;
@@ -18,17 +20,18 @@ abstract final class AppTheme {
             outlineVariant: Color(0xFF313D2D),
           )
         : const ColorScheme.light(
-            primary: Color(0xFF7FB069),
+            // Estética Bible FM (mockup): neutro, texto preto, acento verde floresta.
+            primary: Color(0xFF1A3D2E),
             onPrimary: Color(0xFFFFFFFF),
-            secondary: Color(0xFFFFB347),
-            onSecondary: Color(0xFF3A2600),
-            error: Color(0xFFF25C54),
+            secondary: Color(0xFFBDBDBD),
+            onSecondary: Color(0xFF111111),
+            error: Color(0xFFD32F2F),
             onError: Color(0xFFFFFFFF),
-            surface: Color(0xFFF8FFE5),
-            onSurface: Color(0xFF1F2A1C),
-            surfaceContainerHighest: Color(0xFFEEF7D4),
-            outline: Color(0xFFC7D6B3),
-            outlineVariant: Color(0xFFDCE8CC),
+            surface: Color(0xFFF5F5F5),
+            onSurface: Color(0xFF111111),
+            surfaceContainerHighest: Color(0xFFFFFFFF),
+            outline: Color(0xFFE0E0E0),
+            outlineVariant: Color(0xFFEEEEEE),
           );
 
     return ThemeData(
@@ -39,9 +42,10 @@ abstract final class AppTheme {
       cardTheme: CardThemeData(
         color: scheme.surfaceContainerHighest,
         elevation: 0,
+        margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-          side: BorderSide(color: scheme.outlineVariant, width: 1.1),
+          borderRadius: BorderRadius.circular(AppRadii.md),
+          side: BorderSide(color: scheme.outlineVariant, width: 1),
         ),
       ),
       chipTheme: ChipThemeData(
@@ -57,8 +61,13 @@ abstract final class AppTheme {
           backgroundColor: scheme.primary,
           foregroundColor: scheme.onPrimary,
           elevation: 0,
+          padding: EdgeInsets.symmetric(
+            horizontal: AppSpacing.s3,
+            vertical: AppSpacing.s2,
+          ),
+          minimumSize: const Size(0, AppSpacing.minTouchTarget),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(AppRadii.sm),
           ),
         ),
       ),

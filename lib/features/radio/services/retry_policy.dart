@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 
 /// Encapsulates retry behaviour with exponential backoff and jitter.
 class RetryPolicy {
@@ -25,7 +26,16 @@ class RetryPolicy {
         return;
       } catch (e, st) {
         if (onFailure != null) {
-          await onFailure(attempt, e, st);
+          try {
+            await onFailure(attempt, e, st);
+          } catch (onFailureError, onFailureSt) {
+            // Falha secundária no handler de onFailure não deve quebrar o loop
+            // de retry; mantemos o erro original como contexto.
+            debugPrint(
+              'RetryPolicy.onFailure falhou (tentativa=$attempt): $onFailureError',
+            );
+            debugPrint(onFailureSt.toString());
+          }
         }
         if (attempt == maxAttempts) {
           rethrow;

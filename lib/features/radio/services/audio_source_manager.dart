@@ -1,8 +1,6 @@
 import 'dart:math';
 
 import 'package:just_audio/just_audio.dart';
-import 'package:just_audio_background/just_audio_background.dart';
-import 'package:meu_app/core/audio/audio_runtime_config.dart';
 import 'package:meu_app/core/constants/stream_config.dart';
 
 /// Handles endpoint selection, penalties and audio source configuration.
@@ -31,7 +29,7 @@ class AudioSourceManager {
         : _streamPool;
 
     final minPenalty = candidates
-        .map((uri) => _endpointPenalty[uri.toString()] ?? 0)
+        .map((uri) => (_endpointPenalty[uri.toString()] ?? 0))
         .reduce(min);
 
     final healthiest = candidates
@@ -74,27 +72,9 @@ class AudioSourceManager {
       't': DateTime.now().millisecondsSinceEpoch.toString(),
     });
 
-    final source = AudioRuntimeConfig.backgroundEnabled
-        ? AudioSource.uri(
-            liveUri,
-            tag: const MediaItem(
-              id: 'biblefm-live',
-              title: 'Bible FM',
-              artist: 'En direct • Radio biblique',
-              album: 'Bible FM • En direct',
-              extras: {
-                'isLive': true,
-                'station': 'Bible FM',
-                'tagline': 'Écoutez où que vous soyez',
-              },
-            ),
-          )
-        : AudioSource.uri(liveUri);
-
     await player.setAudioSource(
-      source,
+      AudioSource.uri(liveUri),
       preload: true,
     );
   }
 }
-

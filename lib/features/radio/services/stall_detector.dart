@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 
 import 'package:just_audio/just_audio.dart';
 import 'package:meu_app/features/radio/services/radio_player_controller.dart';
@@ -74,38 +75,45 @@ class StallDetector {
     _lastProgressAt ??= DateTime.now();
     _lastBufferedProgressAt ??= DateTime.now();
     _timer ??= Timer.periodic(getWatchdogTick(), (_) async {
-      if (_isSwitchingSource || _isRecovering) return;
-      final lifecycleNow = getLifecycle();
+      try {
+        if (_isSwitchingSource || _isRecovering) return;
+        final lifecycleNow = getLifecycle();
 
-      final now = DateTime.now();
-      final elapsedSinceProgress = now.difference(_lastProgressAt!);
-      final elapsedSinceBufferedProgress =
-          now.difference(_lastBufferedProgressAt!);
-      final threshold = getStallThreshold();
+        final now = DateTime.now();
+        final elapsedSinceProgress = now.difference(_lastProgressAt!);
+        final elapsedSinceBufferedProgress =
+            now.difference(_lastBufferedProgressAt!);
+        final threshold = getStallThreshold();
 
-      final isStalledWhilePlaying =
-          lifecycleNow == RadioPlaybackLifecycle.playing &&
-              player.playing &&
-              player.processingState == ProcessingState.ready &&
-              elapsedSinceProgress >= threshold &&
-              elapsedSinceBufferedProgress >= threshold;
+        final isStalledWhilePlaying =
+            lifecycleNow == RadioPlaybackLifecycle.playing &&
+                player.playing &&
+                player.processingState == ProcessingState.ready &&
+                elapsedSinceProgress >= threshold &&
+                elapsedSinceBufferedProgress >= threshold;
 
-      final isStalledWhileBuffering =
-          (lifecycleNow == RadioPlaybackLifecycle.preparing ||
-                  lifecycleNow == RadioPlaybackLifecycle.buffering ||
-                  lifecycleNow == RadioPlaybackLifecycle.reconnecting) &&
-              elapsedSinceProgress >= threshold &&
-              elapsedSinceBufferedProgress >= threshold;
+        final isStalledWhileBuffering =
+            (lifecycleNow == RadioPlaybackLifecycle.preparing ||
+                    lifecycleNow == RadioPlaybackLifecycle.buffering ||
+                    lifecycleNow == RadioPlaybackLifecycle.reconnecting) &&
+                elapsedSinceProgress >= threshold &&
+                elapsedSinceBufferedProgress >= threshold;
 
-      if (isStalledWhilePlaying || isStalledWhileBuffering) {
-        _stallSignals++;
-      } else {
-        _stallSignals = 0;
-      }
+        if (isStalledWhilePlaying || isStalledWhileBuffering) {
+          _stallSignals++;
+        } else {
+          _stallSignals = 0;
+        }
 
-      if (_stallSignals >= getStallSignalsBeforeRecover()) {
-        _stallSignals = 0;
-        await onStallDetected();
+        if (_stallSignals >= getStallSignalsBeforeRecover()) {
+          _stallSignals = 0;
+          await onStallDetected();
+        }
+      } catch (e, st) {
+        // Protege o app contra exceções não tratadas no callback assíncrono
+        // do Timer (que podem quebrar a responsividade).
+        debugPrint('StallDetector watchdog falhou: $e');
+        debugPrint(st.toString());
       }
     });
   }

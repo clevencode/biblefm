@@ -32,6 +32,13 @@ enum LiveTransitionStatus {
   failed,
 }
 
+enum _PendingPlayerAction {
+  togglePlayPause,
+  goLive,
+  /// Controlo central da UI: fila e política próprias (ver [_runCentralPlaybackControlAction]).
+  centralPlayback,
+}
+
 class RadioPlayerState {
   const RadioPlayerState({
     required this.lifecycle,
@@ -88,6 +95,7 @@ class RadioPlayerState {
 
 class RadioPlayerController extends Notifier<RadioPlayerState> {
   static const Duration _minActionInterval = Duration(milliseconds: 450);
+  static const Duration _minCentralActionInterval = Duration(milliseconds: 300);
   static const Duration _recoveryWindow = Duration(minutes: 1);
   static final AudioPlayer _sharedPlayer = AudioPlayer(
     handleInterruptions: false,
@@ -118,8 +126,14 @@ class RadioPlayerController extends Notifier<RadioPlayerState> {
   DateTime _recoveryWindowStart = DateTime.now();
   int _recoveriesInWindow = 0;
   DateTime? _lastActionAt;
+  DateTime? _lastCentralActionAt;
   ProcessingState _cachedProcessingState = ProcessingState.idle;
   bool _cachedPlaying = false;
+  bool _isOperationInFlight = false;
+  bool _didRegisterOnDispose = false;
+  _PendingPlayerAction? _pendingAction;
+  bool _drainInProgress = false;
+  bool _cancelRecoveryRequested = false;
 
   Duration get _stallThreshold => _bufferingProfile == BufferingProfile.stable
       ? const Duration(seconds: 12)
@@ -180,7 +194,8 @@ class RadioPlayerController extends Notifier<RadioPlayerState> {
     if (processing == ProcessingState.idle &&
         _hasPlaybackAttempted &&
         !_isSwitchingSource &&
-        !_isRecovering) {
+        !_isRecovering &&
+        !_isOperationInFlight) {
       return RadioPlaybackLifecycle.error;
     }
 
@@ -209,10 +224,6 @@ class RadioPlayerController extends Notifier<RadioPlayerState> {
       onStallDetected: () => _recoverFromStall(reason: 'watchdog'),
     );
 
-    ref.listen<BufferingProfile>(bufferingProfileProvider, (_, next) {
-      setBufferingProfile(next);
-    });
-
     _playerStateSub = _player.playerStateStream.listen((playerState) {
       final processing = playerState.processingState;
       final playing = playerState.playing;
@@ -221,9 +232,16 @@ class RadioPlayerController extends Notifier<RadioPlayerState> {
       _cachedPlaying = playing;
 
       final lifecycle = _computedLifecycle;
+      // Ajusta o comportamento do StallDetector conforme a fase atual.
+      // Em transições/instabilidade usamos "ultra" (limiares mais baixos).
+      final shouldUseUltra = lifecycle == RadioPlaybackLifecycle.preparing ||
+          lifecycle == RadioPlaybackLifecycle.buffering ||
+          lifecycle == RadioPlaybackLifecycle.reconnecting;
+      setBufferingProfile(shouldUseUltra ? BufferingProfile.ultra : BufferingProfile.stable);
 
       Object? errorMessageUpdate = _noStateChange;
       if (lifecycle == RadioPlaybackLifecycle.error &&
+          !_isOperationInFlight &&
           !(state.liveTransitionStatus == LiveTransitionStatus.failed &&
               state.isLiveMode == false)) {
         errorMessageUpdate = 'Échec du chargement du flux';
@@ -268,8 +286,20 @@ class RadioPlayerController extends Notifier<RadioPlayerState> {
       _stallDetector?.onBufferedPositionUpdate(buffered);
     });
 
-    unawaited(_bindAudioSessionEvents());
+    unawaited(
+      _bindAudioSessionEvents().catchError((Object e, StackTrace st) {
+        debugPrint('bindAudioSessionEvents falhou: $e');
+        debugPrint(st.toString());
+      }),
+    );
     unawaited(_bootstrapAutoPlay());
+
+    // `Notifier` não necessariamente expõe `dispose()` nesta versão.
+    // Usamos o ciclo de vida do provider para fazer cleanup determinístico.
+    if (!_didRegisterOnDispose) {
+      _didRegisterOnDispose = true;
+      ref.onDispose(disposeController);
+    }
     return state;
   }
 
@@ -281,7 +311,12 @@ class RadioPlayerController extends Notifier<RadioPlayerState> {
         if (event.type == AudioInterruptionType.pause) {
           if (_player.playing) {
             _resumeAfterInterruption = true;
-            unawaited(_player.pause());
+            unawaited(
+              _player.pause().catchError((Object e, StackTrace st) {
+                debugPrint('pause após interrupção falhou: $e');
+                debugPrint(st.toString());
+              }),
+            );
             state = state.copyWith(
               lifecycle: RadioPlaybackLifecycle.paused,
               errorMessage: null,
@@ -290,13 +325,23 @@ class RadioPlayerController extends Notifier<RadioPlayerState> {
           return;
         }
         if (event.type == AudioInterruptionType.duck) {
-          unawaited(_player.setVolume(0.5));
+          unawaited(
+            _player.setVolume(0.5).catchError((Object e, StackTrace st) {
+              debugPrint('setVolume(0.5) falhou: $e');
+              debugPrint(st.toString());
+            }),
+          );
         }
         return;
       }
 
       if (event.type == AudioInterruptionType.duck) {
-        unawaited(_player.setVolume(1.0));
+        unawaited(
+          _player.setVolume(1.0).catchError((Object e, StackTrace st) {
+            debugPrint('setVolume(1.0) falhou: $e');
+            debugPrint(st.toString());
+          }),
+        );
         return;
       }
 
@@ -306,13 +351,28 @@ class RadioPlayerController extends Notifier<RadioPlayerState> {
           lifecycle: RadioPlaybackLifecycle.preparing,
           errorMessage: null,
         );
-        unawaited(_playWithRetry(maxAttempts: 3));
+        unawaited(
+          _playWithRetry(maxAttempts: 3).catchError((Object e, StackTrace st) {
+            debugPrint('Reprise après interruption impossible: $e');
+            debugPrint(st.toString());
+            state = state.copyWith(
+              lifecycle: RadioPlaybackLifecycle.error,
+              errorMessage:
+                  'Impossible de reprendre après interruption. Réessayez.',
+            );
+          }),
+        );
       }
     });
 
     _becomingNoisySub = session.becomingNoisyEventStream.listen((_) {
       if (!_player.playing) return;
-      unawaited(_player.pause());
+      unawaited(
+        _player.pause().catchError((Object e, StackTrace st) {
+          debugPrint('pause ao trocar saída falhou: $e');
+          debugPrint(st.toString());
+        }),
+      );
       state = state.copyWith(
         lifecycle: RadioPlaybackLifecycle.paused,
         errorMessage: 'Audio mis en pause après changement de sortie.',
@@ -383,39 +443,129 @@ class RadioPlayerController extends Notifier<RadioPlayerState> {
   }
 
   Future<void> togglePlayPause() async {
-    if (!_allowActionNow()) return;
-    if (state.isBuffering) return;
+    _requestPlayerAction(_PendingPlayerAction.togglePlayPause);
+  }
 
-    if (_player.playing) {
-      await _player.pause();
-      state = state.copyWith(
-        lifecycle: RadioPlaybackLifecycle.paused,
-        isLiveMode: false,
-        isLiveIntent: false,
-        liveTransitionStatus: LiveTransitionStatus.idle,
-      );
-      return;
-    }
+  /// Ação do botão central: não reutiliza [togglePlayPause]; usa fila própria,
+  /// debounce mais curto e, ao iniciar áudio, força refresh da source.
+  Future<void> centralPlaybackControl() async {
+    _requestPlayerAction(_PendingPlayerAction.centralPlayback);
+  }
 
+  Future<void> _runTogglePlayPauseAction() async {
+    _isOperationInFlight = true;
     try {
-      _resetRecoveryWindow();
-      state = state.copyWith(
-        lifecycle: RadioPlaybackLifecycle.preparing,
-        errorMessage: null,
-        isLiveMode: false,
-        isLiveIntent: false,
-        liveTransitionStatus: LiveTransitionStatus.idle,
-      );
-      await _configureSource();
-      await _playWithRetry();
-    } catch (_) {
-      state = state.copyWith(
-        lifecycle: RadioPlaybackLifecycle.error,
-        errorMessage: 'Erreur lors de la préparation du flux',
-        isLiveMode: false,
-        isLiveIntent: false,
-        liveTransitionStatus: LiveTransitionStatus.failed,
-      );
+      if (_player.playing) {
+        await _player.pause();
+        // Evita que o `_computedLifecycle` entre em `error` por causa de flags
+        // internas deixadas de operações anteriores (ex.: idle+attempt).
+        _hasPlaybackAttempted = false;
+        _isRecovering = false;
+        _isSwitchingSource = false;
+        _cachedProcessingState = ProcessingState.idle;
+        _cachedPlaying = false;
+        state = state.copyWith(
+          lifecycle: RadioPlaybackLifecycle.paused,
+          isLiveMode: false,
+          isLiveIntent: false,
+          errorMessage: null,
+          liveTransitionStatus: LiveTransitionStatus.idle,
+        );
+        return;
+      }
+
+      try {
+        _resetRecoveryWindow();
+        state = state.copyWith(
+          lifecycle: RadioPlaybackLifecycle.preparing,
+          errorMessage: null,
+          isLiveMode: false,
+          isLiveIntent: false,
+          liveTransitionStatus: LiveTransitionStatus.idle,
+        );
+        await _configureSource();
+        await _playWithRetry();
+      } catch (_) {
+        state = state.copyWith(
+          lifecycle: RadioPlaybackLifecycle.error,
+          errorMessage: 'Erreur lors de la préparation du flux',
+          isLiveMode: false,
+          isLiveIntent: false,
+          liveTransitionStatus: LiveTransitionStatus.failed,
+        );
+      }
+    } finally {
+      _isOperationInFlight = false;
+      unawaited(_drainPendingActions());
+    }
+  }
+
+  Future<void> _runCentralPlaybackControlAction() async {
+    // Debounce em [_drainPendingActions] (antes de limpar [_pendingAction]).
+    _isOperationInFlight = true;
+    try {
+      // Alinhar com o estado da app (não só com o ExoPlayer): em buffering a UI
+      // pode ainda não marcar "playing", mas o fluxo está ativo e deve parar.
+      // Não usar só _sourceConfigured: com lifecycle idle poderia bloquear o arranque.
+      final streamActive = state.lifecycle != RadioPlaybackLifecycle.idle ||
+          _player.playing ||
+          _player.processingState != ProcessingState.idle;
+
+      if (streamActive) {
+        // Parar totalmente e desconectar do link do stream.
+        _stallDetector?.updateSwitching(isSwitching: true);
+        _sessionTimer?.reset();
+        try {
+          await _player.stop();
+        } catch (e, st) {
+          debugPrint('central stop: $e');
+          debugPrint(st.toString());
+        }
+        _hasPlaybackAttempted = false;
+        _isRecovering = false;
+        _isSwitchingSource = false;
+        _sourceConfigured = false;
+        _cachedProcessingState = ProcessingState.idle;
+        _cachedPlaying = false;
+        _stallDetector?.updateSwitching(isSwitching: false);
+        _stallDetector?.syncWatchdog();
+        state = state.copyWith(
+          lifecycle: RadioPlaybackLifecycle.idle,
+          elapsed: Duration.zero,
+          isLiveMode: false,
+          isLiveIntent: false,
+          errorMessage: null,
+          liveTransitionStatus: LiveTransitionStatus.idle,
+        );
+        return;
+      }
+
+      try {
+        _resetRecoveryWindow();
+        state = state.copyWith(
+          lifecycle: RadioPlaybackLifecycle.preparing,
+          errorMessage: null,
+          isLiveMode: false,
+          isLiveIntent: false,
+          liveTransitionStatus: LiveTransitionStatus.idle,
+        );
+        // Política específica do controlo central: sempre refrescar o endpoint
+        // ao iniciar (o toggle da barra pode reutilizar source já configurada).
+        await _configureSource(forceRefresh: true);
+        await _playWithRetry();
+      } catch (_) {
+        state = state.copyWith(
+          lifecycle: RadioPlaybackLifecycle.error,
+          errorMessage:
+              'Erreur via le contrôle central. Réessayez ou utilisez la barre.',
+          isLiveMode: false,
+          isLiveIntent: false,
+          liveTransitionStatus: LiveTransitionStatus.failed,
+        );
+      }
+    } finally {
+      _isOperationInFlight = false;
+      unawaited(_drainPendingActions());
     }
   }
 
@@ -427,8 +577,10 @@ class RadioPlayerController extends Notifier<RadioPlayerState> {
   /// - Execute stop -> configure -> play in a safe sequence
   /// - Confirm or fail, without duplicating lifecycle logic
   Future<void> goLive() async {
-    if (!_allowActionNow()) return;
-    if (state.isBuffering) return;
+    _requestPlayerAction(_PendingPlayerAction.goLive);
+  }
+
+  Future<void> _runGoLiveAction() async {
     if (state.isLiveIntent &&
         state.liveTransitionStatus == LiveTransitionStatus.started) {
       return;
@@ -461,6 +613,7 @@ class RadioPlayerController extends Notifier<RadioPlayerState> {
   Future<void> _executeLiveTransition() async {
     // Prevent the stall detector from triggering during the transition.
     _stallDetector?.updateSwitching(isSwitching: true);
+    _isOperationInFlight = true;
     try {
       await _player.stop();
       await _configureSource(forceRefresh: true);
@@ -489,6 +642,8 @@ class RadioPlayerController extends Notifier<RadioPlayerState> {
       );
     } finally {
       _stallDetector?.updateSwitching(isSwitching: false);
+      _isOperationInFlight = false;
+      unawaited(_drainPendingActions());
     }
   }
 
@@ -524,11 +679,21 @@ class RadioPlayerController extends Notifier<RadioPlayerState> {
       _stallDetector?.dispose();
       _sessionTimer?.reset();
       await _player.stop();
+      // Garante estado interno limpo para futuras reativações do provider.
+      _hasPlaybackAttempted = false;
+      _isRecovering = false;
+      _isSwitchingSource = false;
+      _cachedProcessingState = ProcessingState.idle;
+      _cachedPlaying = false;
+      _lastRecoveryAt = null;
+      _resetRecoveryWindow();
       state = state.copyWith(
         lifecycle: RadioPlaybackLifecycle.idle,
         elapsed: Duration.zero,
         errorMessage: null,
         isLiveMode: false,
+        isLiveIntent: false,
+        liveTransitionStatus: LiveTransitionStatus.idle,
       );
     } catch (e, st) {
       debugPrint('Falha ao parar audio no encerramento: $e');
@@ -538,6 +703,7 @@ class RadioPlayerController extends Notifier<RadioPlayerState> {
 
   Future<void> _playWithRetry({int? maxAttempts}) async {
     _hasPlaybackAttempted = true;
+    _isOperationInFlight = true;
     state = state.copyWith(errorMessage: null);
     _retryPolicy = RetryPolicy(maxAttempts: maxAttempts ?? _retryAttempts);
     final startedLiveIntent = state.isLiveIntent;
@@ -572,6 +738,7 @@ class RadioPlayerController extends Notifier<RadioPlayerState> {
         },
       );
     } catch (e) {
+      _isOperationInFlight = false;
       _errorController.add(e);
       state = state.copyWith(
         lifecycle: RadioPlaybackLifecycle.error,
@@ -582,6 +749,9 @@ class RadioPlayerController extends Notifier<RadioPlayerState> {
             ? LiveTransitionStatus.failed
             : LiveTransitionStatus.idle,
       );
+    } finally {
+      _isOperationInFlight = false;
+      unawaited(_drainPendingActions());
     }
   }
 
@@ -595,8 +765,37 @@ class RadioPlayerController extends Notifier<RadioPlayerState> {
     return true;
   }
 
+  bool _allowCentralActionNow() {
+    final now = DateTime.now();
+    if (_lastCentralActionAt != null &&
+        now.difference(_lastCentralActionAt!) < _minCentralActionInterval) {
+      return false;
+    }
+    _lastCentralActionAt = now;
+    return true;
+  }
+
+  /// Estados em que o utilizador pode querer **parar / mudar de modo** sem esperar
+  /// pelo debounce (UX: não bloquear transporte por causa de buffering/reconnexion).
+  bool _loadingLifecycleAllowsImmediateTransportTap() {
+    final l = state.lifecycle;
+    return l == RadioPlaybackLifecycle.preparing ||
+        l == RadioPlaybackLifecycle.buffering ||
+        l == RadioPlaybackLifecycle.reconnecting;
+  }
+
+  Future<void> _waitUntilRecoveryFinished() async {
+    while (_isRecovering) {
+      await Future<void>.delayed(const Duration(milliseconds: 16));
+    }
+  }
+
   Future<void> _recoverFromStall({String reason = 'unknown'}) async {
     if (_isSwitchingSource || _isRecovering) return;
+    if (_cancelRecoveryRequested) {
+      _cancelRecoveryRequested = false;
+      return;
+    }
     final now = DateTime.now();
     if (_lastRecoveryAt != null &&
         now.difference(_lastRecoveryAt!) < _recoveryCooldown) {
@@ -623,7 +822,15 @@ class RadioPlayerController extends Notifier<RadioPlayerState> {
         _audioSourceManager.activeStreamUri,
       );
       await _player.stop();
+      if (_cancelRecoveryRequested) {
+        _cancelRecoveryRequested = false;
+        return;
+      }
       await _configureSource(forceRefresh: true);
+      if (_cancelRecoveryRequested) {
+        _cancelRecoveryRequested = false;
+        return;
+      }
       await _playWithRetry();
     } catch (e, st) {
       debugPrint('Falha na recuperacao de stall: $e');
@@ -633,6 +840,78 @@ class RadioPlayerController extends Notifier<RadioPlayerState> {
       _isRecovering = false;
       _isSwitchingSource = false;
       _stallDetector?.updateRecovering(isRecovering: false);
+      unawaited(_drainPendingActions());
+    }
+  }
+
+  void _requestPlayerAction(_PendingPlayerAction action) {
+    // Última ação ganha.
+    _pendingAction = action;
+
+    // Pré-empcao simples de recovery quando o usuário interage.
+    if (_isRecovering) {
+      _cancelRecoveryRequested = true;
+    }
+
+    unawaited(_drainPendingActions());
+  }
+
+  /// Não incluir [_isRecovering]: a fila espera explicitamente com cancelamento
+  /// (evita “congelar” toques enquanto a recuperação corre; ver [_waitUntilRecoveryFinished]).
+  bool get _isBusy =>
+      _sourceLock != null ||
+      _isSwitchingSource ||
+      _isOperationInFlight;
+
+  Future<void> _drainPendingActions() async {
+    if (_drainInProgress) return;
+    _drainInProgress = true;
+    try {
+      while (_pendingAction != null) {
+        if (_isRecovering) {
+          _cancelRecoveryRequested = true;
+          await _waitUntilRecoveryFinished();
+        }
+        if (_isBusy) {
+          await Future<void>.delayed(const Duration(milliseconds: 40));
+          continue;
+        }
+
+        // Debounce: barra/live aqui; controlo central antes de limpar a fila
+        // (evita descartar o toque se o debounce falhar).
+        if (_pendingAction == _PendingPlayerAction.centralPlayback) {
+          if (_loadingLifecycleAllowsImmediateTransportTap()) {
+            _lastCentralActionAt = DateTime.now();
+          } else if (!_allowCentralActionNow()) {
+            await Future<void>.delayed(const Duration(milliseconds: 40));
+            continue;
+          }
+        } else {
+          if (_loadingLifecycleAllowsImmediateTransportTap()) {
+            _lastActionAt = DateTime.now();
+          } else {
+            while (!_allowActionNow()) {
+              await Future<void>.delayed(const Duration(milliseconds: 40));
+              if (_pendingAction == null) return;
+            }
+          }
+        }
+
+        final action = _pendingAction!;
+        _pendingAction = null;
+        if (action == _PendingPlayerAction.goLive) {
+          await _runGoLiveAction();
+        } else if (action == _PendingPlayerAction.centralPlayback) {
+          await _runCentralPlaybackControlAction();
+        } else {
+          await _runTogglePlayPauseAction();
+        }
+      }
+    } finally {
+      _drainInProgress = false;
+      if (_pendingAction != null) {
+        unawaited(_drainPendingActions());
+      }
     }
   }
 
@@ -642,7 +921,13 @@ class RadioPlayerController extends Notifier<RadioPlayerState> {
       lifecycle: RadioPlaybackLifecycle.reconnecting,
       errorMessage: 'Échec du flux. Tentative de reconnexion...',
     );
-    unawaited(_recoverFromStall(reason: 'central_error_handler'));
+    unawaited(
+      _recoverFromStall(reason: 'central_error_handler')
+          .catchError((Object e, StackTrace st) {
+        debugPrint('Erreur non gérée dans recoverFromStall: $e');
+        debugPrint(st.toString());
+      }),
+    );
   }
 
   bool _consumeRecoverySlot() {
@@ -681,7 +966,4 @@ final radioPlayerControllerProvider =
     NotifierProvider<RadioPlayerController, RadioPlayerState>(
   RadioPlayerController.new,
 );
-
-final bufferingProfileProvider =
-    StateProvider<BufferingProfile>((ref) => BufferingProfile.stable);
 
