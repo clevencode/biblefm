@@ -58,14 +58,14 @@ class RadioApp extends ConsumerWidget {
           value: overlayStyle,
           child: child ?? const SizedBox.shrink(),
         );
-        // Limita o factor de escala do sistema para evitar ruturas de layout
-        // (acessibilidade + layouts densos).
+        // Escala de texto: permite ampliar até ~175% (WCAG sugere até 200%;
+        // o tecto limita ruturas; o ecrã principal do player é rolável).
         final mq = MediaQuery.of(context);
         return MediaQuery(
           data: mq.copyWith(
             textScaler: mq.textScaler.clamp(
               minScaleFactor: 0.85,
-              maxScaleFactor: 1.35,
+              maxScaleFactor: 1.75,
             ),
           ),
           child: content,

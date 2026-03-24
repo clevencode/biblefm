@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:meu_app/core/theme/app_spacing.dart';
 import 'package:meu_app/core/theme/app_theme.dart';
 
-/// Indicador «ao vivo»: vermelho em direct, verde em differe (a tocar),
-/// cinza em pausa/idle.
+/// Indicador de estado: **verde** em en direct (a tocar); différé em **âmbar**;
+/// **vermelho** em pause.
 /// A animação roda apenas durante reprodução (differe/en direct).
 class LivePulsingIndicator extends StatefulWidget {
   const LivePulsingIndicator({
@@ -32,8 +32,6 @@ class LivePulsingIndicator extends StatefulWidget {
 class _LivePulsingIndicatorState extends State<LivePulsingIndicator>
     with SingleTickerProviderStateMixin {
   late AnimationController _pulseController;
-
-  static const Color _liveRed = Color(0xFFE53935);
 
   @override
   void initState() {
@@ -97,25 +95,18 @@ class _LivePulsingIndicatorState extends State<LivePulsingIndicator>
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final brightness = Theme.of(context).brightness;
+    final isDark = brightness == Brightness.dark;
     final s = widget.scale;
     final coreD = AppSpacing.g(2, s) - AppSpacing.gHalf(s) * 0.5;
     final outerSize = AppSpacing.g(4, s);
-    final differGreen = isDark
-        ? const Color(0xFF66BB6A)
-        : const Color(0xFF2E7D32);
-    final pausedGray = Color.lerp(
-      scheme.outline,
-      scheme.onSurfaceVariant,
-      isDark ? 0.22 : 0.35,
-    )!;
-    final accent = widget.isEnDirect
-        ? _liveRed
-        : (widget.isPlaying ? differGreen : pausedGray);
-    final shadowColor = widget.isEnDirect
-        ? const Color(0x33E53935)
-        : scheme.shadow.withValues(alpha: isDark ? 0.35 : 0.12);
-
+    final liveGreen = AppTheme.transportLivePulseColor(brightness);
+    final deferredAmber = AppTheme.transportDeferredPulseColor(brightness);
+    final pausedRed = AppTheme.transportPausedPulseColor(brightness);
+    final accent =
+        widget.isPlaying
+            ? (widget.isEnDirect ? liveGreen : deferredAmber)
+            : pausedRed;
     final defaultTooltip = !widget.isEnDirect
         ? 'Lecture différée (pas en direct)'
         : widget.onTap == null
@@ -169,13 +160,6 @@ class _LivePulsingIndicatorState extends State<LivePulsingIndicator>
                     decoration: BoxDecoration(
                       color: accent,
                       shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: shadowColor,
-                          blurRadius: AppSpacing.gHalf(s),
-                          spreadRadius: 0,
-                        ),
-                      ],
                     ),
                   ),
                 ],

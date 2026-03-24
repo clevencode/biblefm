@@ -50,8 +50,14 @@ class ThemeBlendNotifier extends StateNotifier<double> {
     state = t.clamp(0.0, 1.0);
   }
 
-  void endDrag() {
-    final snap = state < 0.5 ? 0.0 : 1.0;
+  /// [horizontalVelocityPx] (positivo = para a direita): gesto rápido força o lado do fling.
+  void endDrag({double horizontalVelocityPx = 0}) {
+    const fling = 520.0;
+    final snap = horizontalVelocityPx > fling
+        ? 1.0
+        : horizontalVelocityPx < -fling
+            ? 0.0
+            : (state < 0.5 ? 0.0 : 1.0);
     state = snap;
     ref.read(appThemeModeProvider.notifier).state =
         snap == 0 ? ThemeMode.light : ThemeMode.dark;

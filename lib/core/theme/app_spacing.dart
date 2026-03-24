@@ -199,8 +199,8 @@ abstract final class AppLayoutBreakpoints {
     );
   }
 
-  /// Cantos do cartão principal — alinhado a contentores M3 (~16 pt lógicos).
-  static const double playerCardCornerPt = 16;
+  /// Cantos do cartão principal — alinhado a blocos Notion (~6 pt; ver [AppTheme.notionBlockRadius]).
+  static const double playerCardCornerPt = 6;
 }
 
 /// Raios de canto alinhados à grelha 8pt.

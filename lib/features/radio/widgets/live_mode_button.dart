@@ -14,7 +14,6 @@ class LiveModeButton extends StatelessWidget {
     required this.onPressed,
     required this.scale,
     required this.size,
-    required this.isDark,
     this.narrowMobile = false,
   });
 
@@ -25,7 +24,6 @@ class LiveModeButton extends StatelessWidget {
 
   /// Diâmetro do play à direita; na pílula é a **altura** do comprimido.
   final double size;
-  final bool isDark;
 
   /// Mobile-first: pílula mais longa em ecrãs estreitos (referência visual).
   final bool narrowMobile;
@@ -33,30 +31,21 @@ class LiveModeButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final iconColor = isDark ? scheme.onSurface : const Color(0xFF141414);
-    final baseFillColor =
-        isDark ? scheme.surfaceContainerHighest : Colors.white;
-    final differFillColor = Color.lerp(
-      Colors.transparent,
-      baseFillColor,
-      0.7,
-    )!;
-    // Estados visuais:
-    // - live: preenchimento base (100%)
-    // - differe (tocando fora do live): mesmo preenchimento com brilho reduzido
-    // - pausa fora do live: sem preenchimento
-    final fillColor = isPaused
-        ? Colors.transparent
-        : (isLiveMode ? baseFillColor : differFillColor);
-    final differBorderColor =
-        isDark ? const Color(0xFF66BB6A) : const Color(0xFF2E7D32);
-    final liveBorderColor = const Color(0xFFE53935);
-    final idleBorderColor = isDark
-        ? scheme.outline.withValues(alpha: 0.55)
-        : Colors.black.withValues(alpha: 0.18);
-    final borderColor = isPaused
-        ? idleBorderColor
-        : (isLiveMode ? liveBorderColor : differBorderColor);
+    final brightness = Theme.of(context).brightness;
+    final isDark = brightness == Brightness.dark;
+    final iconColor = AppTheme.transportLiveIcon(brightness);
+    // Escuro: painel elevado. Claro: papel (#F3F2EF) — branco puro sumia no gradiente.
+    final baseFillColor = brightness == Brightness.light
+        ? scheme.surfaceContainerLow
+        : scheme.surfaceContainerHighest;
+    final liveBorderColor = brightness == Brightness.light
+        ? AppTheme.transportLiveBorder(brightness)
+        : scheme.outline.withValues(alpha: 0.85);
+    // Preenchimento sólido só com directo **ativo** (a ouvir em live, sem pausa).
+    // Em pause ou em différé: só traço (sem preenchimento).
+    final liveSurfaceActive = isLiveMode && !isPaused;
+    final fillColor = liveSurfaceActive ? baseFillColor : Colors.transparent;
+    final borderColor = liveBorderColor;
 
     final iconSize = (size * 0.38).clamp(
       AppSpacing.g(3, scale),
@@ -92,24 +81,10 @@ class LiveModeButton extends StatelessWidget {
     );
     final pillHeight = size;
 
-    final liveShadow = BoxShadow(
-      color: scheme.shadow.withValues(alpha: isDark ? 0.38 : 0.1),
-      blurRadius: AppSpacing.g(2, scale),
-      offset: Offset(0, AppSpacing.g(1, scale)),
-    );
-    final differShadow = BoxShadow(
-      color: scheme.shadow.withValues(alpha: isDark ? 0.24 : 0.07),
-      blurRadius: AppSpacing.g(2, scale) * 0.75,
-      offset: Offset(0, AppSpacing.gHalf(scale)),
-    );
-
     final decoration = BoxDecoration(
       color: fillColor,
       borderRadius: BorderRadius.circular(radius),
       border: Border.all(color: borderColor, width: 1),
-      boxShadow: isPaused
-          ? const []
-          : (isLiveMode ? [liveShadow] : [differShadow]),
     );
 
     final child = BroadcastSignalIcon(color: iconColor, size: iconSize);

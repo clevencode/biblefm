@@ -8,7 +8,6 @@ class RadioTransportControls extends StatelessWidget {
     super.key,
     required this.scale,
     required this.playVisualSize,
-    required this.isDark,
     required this.narrowMobile,
     required this.isPlaying,
     required this.isPaused,
@@ -20,7 +19,6 @@ class RadioTransportControls extends StatelessWidget {
 
   final double scale;
   final double playVisualSize;
-  final bool isDark;
   final bool narrowMobile;
   final bool isPlaying;
   final bool isPaused;
@@ -53,7 +51,6 @@ class RadioTransportControls extends StatelessWidget {
             onPressed: onLiveTap,
             scale: scale,
             size: playVisualSize,
-            isDark: isDark,
             narrowMobile: narrowMobile,
           ),
         ],

@@ -32,9 +32,9 @@ class PlayButton extends StatefulWidget {
 class _PlayButtonState extends State<PlayButton> {
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    // Trocamos entre play e pause sem animacoes de pulso.
+    final brightness = Theme.of(context).brightness;
+    final isDark = brightness == Brightness.dark;
+    // Variante rounded: cantos do play/pause mais suaves.
     final iconData =
         widget.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded;
     final ls = widget.layoutScale ?? 1.0;
@@ -50,14 +50,9 @@ class _PlayButtonState extends State<PlayButton> {
       AppSpacing.g(4, ls),
       AppSpacing.g(6, ls),
     );
-    // Preenchimento sólido: claro = disco preto + ícone branco; escuro alinhado ao [ColorScheme].
-    final fillColor = isDark
-        ? scheme.surfaceContainerHigh
-        : const Color(0xFF0D0D0D);
-    final borderColor = isDark
-        ? scheme.outline.withValues(alpha: 0.42)
-        : Colors.black.withValues(alpha: 0.04);
-    final iconColor = isDark ? scheme.onSurface : Colors.white;
+    // Notion: disco tinta (claro) / branco (escuro), ícone inverso; bloco sólido plano.
+    final fillColor = AppTheme.transportPlayFill(brightness);
+    final iconColor = AppTheme.transportPlayIcon(brightness);
 
     final canTap = widget.enabled && widget.onTap != null;
 
@@ -84,11 +79,11 @@ class _PlayButtonState extends State<PlayButton> {
         child: InkWell(
           borderRadius: BorderRadius.circular(buttonSize),
           hoverColor: isDark
-              ? AppTheme.darkHoverOverlay(scheme)
-              : Colors.white.withValues(alpha: 0.1),
-          splashColor: isDark
-              ? AppTheme.darkHoverOverlay(scheme)
+              ? Colors.black.withValues(alpha: 0.06)
               : Colors.white.withValues(alpha: 0.12),
+          splashColor: isDark
+              ? Colors.black.withValues(alpha: 0.1)
+              : Colors.white.withValues(alpha: 0.18),
           // Mantém o toque em buffering: o loading é só visual no botão.
           onTap: canTap ? widget.onTap : null,
           child: AnimatedOpacity(
@@ -102,16 +97,6 @@ class _PlayButtonState extends State<PlayButton> {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: fillColor,
-                border: Border.all(color: borderColor, width: 1),
-                boxShadow: [
-                  BoxShadow(
-                    color: (isDark ? scheme.shadow : Colors.black87).withValues(
-                      alpha: isDark ? 0.22 : 0.1,
-                    ),
-                    blurRadius: AppSpacing.g(2, ls),
-                    offset: Offset(0, AppSpacing.g(1, ls)),
-                  ),
-                ],
               ),
               child: Center(
                 child: widget.isLoading

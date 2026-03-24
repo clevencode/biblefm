@@ -28,8 +28,6 @@ class RadioPlayerPage extends ConsumerStatefulWidget {
 }
 
 class _RadioPlayerPageState extends ConsumerState<RadioPlayerPage> {
-  static const Color _chipGreyLight = Color(0xFFE8E8E8);
-
   @override
   void initState() {
     super.initState();
@@ -46,13 +44,8 @@ class _RadioPlayerPageState extends ConsumerState<RadioPlayerPage> {
     final player = ref.read(radioPlayerUiProvider.notifier);
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final cardColor =
-        isDark ? scheme.surfaceContainerHighest : Colors.white;
-    // Pílula de estado: um degrau abaixo do cartão (hierarquia M3).
-    final chipGrey = isDark ? scheme.surfaceContainerHigh : _chipGreyLight;
-    // Bandeja do contador: recuada relativamente ao cartão.
-    final timerTrayColor =
-        isDark ? scheme.surfaceContainer : const Color(0xFFEEEEEE);
+    final cardColor = scheme.surfaceContainerHighest;
+    final timerTrayColor = scheme.surfaceContainerLow;
     final titleColor = scheme.onSurface;
     final timerColor = scheme.onSurface;
 
@@ -66,7 +59,7 @@ class _RadioPlayerPageState extends ConsumerState<RadioPlayerPage> {
         body: Stack(
           fit: StackFit.expand,
           children: [
-            _PageBackground(isDark: isDark),
+            const _PageBackground(),
             SafeArea(
               child: LayoutBuilder(
                 builder: (context, constraints) {
@@ -88,15 +81,20 @@ class _RadioPlayerPageState extends ConsumerState<RadioPlayerPage> {
                     scale,
                   );
                   final panelPaddingH = AppSpacing.g(
-                    AppSpacing.marginPanelInnerHorizontalSteps(narrow: isNarrow),
+                    AppSpacing.marginPanelInnerHorizontalSteps(
+                      narrow: isNarrow,
+                    ),
                     scale,
                   );
-                  final panelWidth =
-                      AppLayoutBreakpoints.maxPanelWidth(w, h, scale);
-                  final isPhonePortrait = !AppLayoutBreakpoints.isTablet(w) &&
+                  final panelWidth = AppLayoutBreakpoints.maxPanelWidth(
+                    w,
+                    h,
+                    scale,
+                  );
+                  final isPhonePortrait =
+                      !AppLayoutBreakpoints.isTablet(w) &&
                       !AppLayoutBreakpoints.isLandscape(w, h);
-                  final cardWidthFraction =
-                      isPhonePortrait ? 0.96 : 1.0;
+                  final cardWidthFraction = isPhonePortrait ? 0.96 : 1.0;
 
                   final playButtonSize = AppSpacing.g(
                     AppSpacing.playControlDiameterSteps(
@@ -111,14 +109,12 @@ class _RadioPlayerPageState extends ConsumerState<RadioPlayerPage> {
                     AppSpacing.g(AppSpacing.playControlDiameterMaxSteps, scale),
                   );
                   final postButtonGap = AppSpacing.g(
-                    AppSpacing.transportStackGapSteps(
-                      compactHeight: isCompact,
-                    ),
+                    AppSpacing.transportStackGapSteps(compactHeight: isCompact),
                     scale,
                   );
-                  final overlayContentHeight =
-                      playVisualSize + postButtonGap;
-                  final barReserve = overlayContentHeight +
+                  final overlayContentHeight = playVisualSize + postButtonGap;
+                  final barReserve =
+                      overlayContentHeight +
                       bottomInset +
                       AppSpacing.g(
                         AppSpacing.transportBottomMarginSteps,
@@ -138,10 +134,8 @@ class _RadioPlayerPageState extends ConsumerState<RadioPlayerPage> {
                             child: LinearProgressIndicator(
                               minHeight: 3,
                               color: scheme.primary,
-                              backgroundColor:
-                                  scheme.surfaceContainerHighest.withValues(
-                                alpha: 0.35,
-                              ),
+                              backgroundColor: scheme.surfaceContainerHighest
+                                  .withValues(alpha: 0.35),
                             ),
                           ),
                         ),
@@ -182,8 +176,7 @@ class _RadioPlayerPageState extends ConsumerState<RadioPlayerPage> {
                                     builder: (context, innerConstraints) {
                                       return SingleChildScrollView(
                                         clipBehavior: Clip.none,
-                                        physics:
-                                            const ClampingScrollPhysics(),
+                                        physics: const ClampingScrollPhysics(),
                                         child: ConstrainedBox(
                                           constraints: BoxConstraints(
                                             minHeight:
@@ -196,15 +189,15 @@ class _RadioPlayerPageState extends ConsumerState<RadioPlayerPage> {
                                               mainAxisSize: MainAxisSize.min,
                                               children: [
                                                 _MainPlayerCard(
-                                                  width: AppSpacing
-                                                      .clampCardContentWidth(
-                                                    contentWidth:
-                                                        innerConstraints
-                                                            .maxWidth,
-                                                    panelCap: panelWidth,
-                                                    contentWidthFraction:
-                                                        cardWidthFraction,
-                                                  ),
+                                                  width:
+                                                      AppSpacing.clampCardContentWidth(
+                                                        contentWidth:
+                                                            innerConstraints
+                                                                .maxWidth,
+                                                        panelCap: panelWidth,
+                                                        contentWidthFraction:
+                                                            cardWidthFraction,
+                                                      ),
                                                   panelPaddingH: panelPaddingH,
                                                   cardColor: cardColor,
                                                   isDark: isDark,
@@ -214,18 +207,17 @@ class _RadioPlayerPageState extends ConsumerState<RadioPlayerPage> {
                                                   isPlaying: ui.isPlaying,
                                                   isBuffering:
                                                       isBufferingUiLifecycle(
-                                                    ui.lifecycle,
-                                                  ),
+                                                        ui.lifecycle,
+                                                      ),
                                                   isLiveMode: ui.isLiveMode,
                                                   isEnDirect: ui.isEnDirect,
-                                                  livePulseActive: ui
-                                                          .livePulseActive &&
+                                                  livePulseActive:
+                                                      ui.livePulseActive &&
                                                       ui.isEnDirect,
-                                                  onLiveIndicatorTap: ui
-                                                          .isEnDirect
+                                                  onLiveIndicatorTap:
+                                                      ui.isEnDirect
                                                       ? player.toggleLivePulse
                                                       : null,
-                                                  chipGrey: chipGrey,
                                                   timerTrayColor:
                                                       timerTrayColor,
                                                   titleColor: titleColor,
@@ -243,8 +235,7 @@ class _RadioPlayerPageState extends ConsumerState<RadioPlayerPage> {
                                                     ),
                                                   ),
                                                   _ErrorBanner(
-                                                    message:
-                                                        ui.errorMessage!,
+                                                    message: ui.errorMessage!,
                                                     scale: scale,
                                                     onRetry:
                                                         player.retryAfterError,
@@ -266,7 +257,8 @@ class _RadioPlayerPageState extends ConsumerState<RadioPlayerPage> {
                       Positioned(
                         left: transportSidePadding,
                         right: transportSidePadding,
-                        bottom: bottomInset +
+                        bottom:
+                            bottomInset +
                             AppSpacing.g(
                               AppSpacing.transportBottomMarginSteps,
                               scale,
@@ -277,13 +269,11 @@ class _RadioPlayerPageState extends ConsumerState<RadioPlayerPage> {
                           child: RadioTransportControls(
                             scale: scale,
                             playVisualSize: playVisualSize,
-                            isDark: isDark,
                             narrowMobile: isNarrow,
                             isPlaying: ui.isPlaying,
                             isPaused:
                                 ui.lifecycle == UiPlaybackLifecycle.paused,
-                            isBuffering:
-                                isBufferingUiLifecycle(ui.lifecycle),
+                            isBuffering: isBufferingUiLifecycle(ui.lifecycle),
                             isLiveMode: ui.isLiveMode,
                             onCentralTap: () => unawaited(player.centralTap()),
                             onLiveTap: ui.canTapLive ? player.liveTap : null,
@@ -303,28 +293,25 @@ class _RadioPlayerPageState extends ConsumerState<RadioPlayerPage> {
 }
 
 class _PageBackground extends StatelessWidget {
-  const _PageBackground({required this.isDark});
-
-  final bool isDark;
+  const _PageBackground();
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    // Claro: sólido do tema. Escuro: preto uniforme.
-    if (!isDark) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    if (isDark) {
       return DecoratedBox(decoration: BoxDecoration(color: scheme.surface));
     }
     return const DecoratedBox(
-      decoration: BoxDecoration(color: Colors.black),
+      decoration: BoxDecoration(
+        gradient: AppTheme.notionLightBackgroundGradient,
+      ),
     );
   }
 }
 
 class _BibleFmHeader extends StatelessWidget {
-  const _BibleFmHeader({
-    required this.scale,
-    required this.titleColor,
-  });
+  const _BibleFmHeader({required this.scale, required this.titleColor});
 
   final double scale;
   final Color titleColor;
@@ -405,7 +392,7 @@ class _DigitalTimer extends StatelessWidget {
       color: scheme.onSurfaceVariant,
     );
 
-    final radius = AppRadii.borderRadius(AppRadii.sm, scale);
+    final radius = AppRadii.borderRadius(AppTheme.notionBlockRadius, scale);
 
     return Semantics(
       button: true,
@@ -430,16 +417,9 @@ class _DigitalTimer extends StatelessWidget {
                 color: timerTrayColor,
                 borderRadius: radius,
                 border: Border.all(
-                  color: scheme.outline.withValues(alpha: isDark ? 0.16 : 0.11),
+                  color: scheme.outline.withValues(alpha: isDark ? 0.38 : 0.52),
                   width: 1,
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: scheme.shadow.withValues(alpha: isDark ? 0.08 : 0.06),
-                    blurRadius: AppSpacing.g(2, scale),
-                    offset: Offset(0, AppSpacing.gHalf(scale)),
-                  ),
-                ],
               ),
               child: Padding(
                 padding: AppSpacing.insetSymmetric(
@@ -508,7 +488,6 @@ class _MainPlayerCard extends StatelessWidget {
     required this.isEnDirect,
     required this.livePulseActive,
     required this.onLiveIndicatorTap,
-    required this.chipGrey,
     required this.timerTrayColor,
     required this.titleColor,
     required this.timerColor,
@@ -529,7 +508,6 @@ class _MainPlayerCard extends StatelessWidget {
   final bool isEnDirect;
   final bool livePulseActive;
   final VoidCallback? onLiveIndicatorTap;
-  final Color chipGrey;
   final Color timerTrayColor;
   final Color titleColor;
   final Color timerColor;
@@ -539,12 +517,8 @@ class _MainPlayerCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final statusToTimerGap = AppSpacing.g(
-      narrowMobile ? 2 : 3,
-      scale,
-    );
-    final timerBodyWidth =
-        math.max(0.0, width - 2 * panelPaddingH);
+    final statusToTimerGap = AppSpacing.g(narrowMobile ? 2 : 3, scale);
+    final timerBodyWidth = math.max(0.0, width - 2 * panelPaddingH);
     const cornerPt = AppLayoutBreakpoints.playerCardCornerPt;
     return Container(
       width: width,
@@ -555,24 +529,17 @@ class _MainPlayerCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: cardColor,
         borderRadius: AppRadii.borderRadius(cornerPt, scale),
-        boxShadow: [
-          BoxShadow(
-            color: scheme.shadow.withValues(
-              alpha: isDark ? 0.32 : 0.07,
-            ),
-            blurRadius: AppSpacing.g(3, scale),
-            offset: Offset(0, AppSpacing.g(1, scale)),
-          ),
-        ],
+        border: Border.all(
+          color: scheme.outline.withValues(alpha: isDark ? 0.65 : 0.78),
+          width: 1,
+        ),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: EdgeInsets.only(
-              right: AppSpacing.gHalf(scale),
-            ),
+            padding: EdgeInsets.only(right: AppSpacing.gHalf(scale)),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               crossAxisAlignment: CrossAxisAlignment.center,
@@ -583,7 +550,6 @@ class _MainPlayerCard extends StatelessWidget {
                   isLiveMode: isLiveMode,
                   scale: scale,
                   narrowMobile: narrowMobile,
-                  chipGrey: chipGrey,
                   labelColor: titleColor,
                   isDark: isDark,
                 ),
@@ -638,11 +604,12 @@ class _ErrorBanner extends StatelessWidget {
           vertical: 1,
         ),
         decoration: BoxDecoration(
-          color: (isDark ? scheme.errorContainer : scheme.error)
-              .withValues(alpha: isDark ? 0.28 : 0.1),
-          borderRadius: AppRadii.borderRadius(AppRadii.sm, scale),
+          color: (isDark ? scheme.errorContainer : scheme.error).withValues(
+            alpha: isDark ? 0.28 : 0.1,
+          ),
+          borderRadius: AppRadii.borderRadius(AppTheme.notionBlockRadius, scale),
           border: Border.all(
-            color: scheme.error.withValues(alpha: 0.65),
+            color: scheme.error.withValues(alpha: 0.55),
             width: 1,
           ),
         ),
@@ -662,19 +629,20 @@ class _ErrorBanner extends StatelessWidget {
                 children: [
                   Text(
                     message,
-                    style: GoogleFonts.dmSans(
+                    style: GoogleFonts.inter(
                       fontSize: AppTypeScale.body * scale,
-                      fontWeight: FontWeight.w700,
+                      fontWeight: FontWeight.w600,
                       color: scheme.error,
+                      height: 1.35,
                     ),
                   ),
                   SizedBox(height: AppSpacing.gHalf(scale)),
                   Text(
                     'Vérifiez votre connexion ou réessayez.',
-                    style: GoogleFonts.dmSans(
+                    style: GoogleFonts.inter(
                       fontSize: AppTypeScale.label * scale,
                       fontWeight: FontWeight.w500,
-                      color: scheme.onSurface.withValues(alpha: 0.7),
+                      color: scheme.onSurfaceVariant,
                     ),
                   ),
                 ],
@@ -685,10 +653,10 @@ class _ErrorBanner extends StatelessWidget {
               onPressed: onRetry,
               style: TextButton.styleFrom(
                 foregroundColor: scheme.error,
-                textStyle: GoogleFonts.dmSans(
+                textStyle: GoogleFonts.inter(
                   fontSize: AppTypeScale.label * scale,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: AppSpacing.halfGrid * 0.1 * scale,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.4,
                 ),
               ),
               child: const Text('RÉESSAYER'),
@@ -707,7 +675,6 @@ class _PlaybackStatusChip extends StatelessWidget {
     required this.isLiveMode,
     required this.scale,
     required this.narrowMobile,
-    required this.chipGrey,
     required this.labelColor,
     required this.isDark,
   });
@@ -717,21 +684,40 @@ class _PlaybackStatusChip extends StatelessWidget {
   final bool isLiveMode;
   final double scale;
   final bool narrowMobile;
-  final Color chipGrey;
   final Color labelColor;
   final bool isDark;
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final brightness = Theme.of(context).brightness;
     final isListening = isPlaying && !isBuffering;
     final label = isListening
         ? (isLiveMode ? 'En direct' : 'Différé')
         : 'En pause';
 
-    final minH = math.max(
-      AppSpacing.minTouchTarget,
-      AppSpacing.g(6, scale),
+    final pillBg = AppTheme.statusPillBackground(
+      scheme: scheme,
+      brightness: brightness,
+      isListening: isListening,
+      isLiveMode: isLiveMode,
     );
+    final pillBorder = AppTheme.statusPillBorder(
+      scheme: scheme,
+      brightness: brightness,
+      isListening: isListening,
+      isLiveMode: isLiveMode,
+    );
+
+    final labelPaint = isListening
+        ? labelColor.withValues(alpha: isDark ? 0.92 : 1)
+        : Color.lerp(
+            labelColor,
+            scheme.error,
+            isDark ? 0.42 : 0.48,
+          )!;
+
+    final minH = math.max(AppSpacing.minTouchTarget, AppSpacing.g(6, scale));
     return ConstrainedBox(
       constraints: BoxConstraints(minHeight: minH),
       child: Container(
@@ -742,8 +728,12 @@ class _PlaybackStatusChip extends StatelessWidget {
           vertical: 1,
         ),
         decoration: BoxDecoration(
-          color: chipGrey,
+          color: pillBg,
           borderRadius: AppRadii.borderRadius(AppRadii.pill, scale),
+          border: Border.all(
+            color: pillBorder,
+            width: 1,
+          ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -751,13 +741,11 @@ class _PlaybackStatusChip extends StatelessWidget {
           children: [
             Text(
               label.toUpperCase(),
-              style: GoogleFonts.dmSans(
-                fontWeight: FontWeight.w800,
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.w600,
                 fontSize: AppTypeScale.label * scale,
-                letterSpacing: AppSpacing.gHalf(scale) * 0.22,
-                color: isDark
-                    ? labelColor.withValues(alpha: 0.92)
-                    : labelColor,
+                letterSpacing: 0.35,
+                color: labelPaint,
               ),
             ),
           ],
