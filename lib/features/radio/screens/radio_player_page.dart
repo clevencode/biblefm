@@ -12,6 +12,10 @@ import 'package:meu_app/features/radio/widgets/live_pulsing_indicator.dart';
 import 'package:meu_app/features/radio/widgets/radio_transport_controls.dart';
 
 /// Bible FM: layout **mobile-first** — base para telemóvel, depois tablet/paisagem.
+/// Estrutura alinhada às orientações de **margens, contenção e encartes** do
+/// Android ([content structure](https://developer.android.com/design/ui/mobile/guides/layout-and-content/content-structure?hl=pt-br)):
+/// grelha 8 pt, ~16 dp lateral em compacto, cartão como contenção explícita,
+/// área segura e corpo rolável quando o conteúdo excede a altura.
 /// Estado de leitura / contador / live: [radioPlayerUiProvider].
 ///
 /// [ConsumerStatefulWidget] para [ref] no arranque automático e no `build`.
@@ -90,8 +94,8 @@ class _RadioPlayerPageState extends ConsumerState<RadioPlayerPage> {
 
                   final playButtonSize = AppSpacing.g(
                     AppSpacing.playControlDiameterSteps(
-                      narrow: isNarrow,
-                      compactHeight: isCompact,
+                      layoutWidth: w,
+                      layoutHeight: h,
                     ),
                     scale,
                   );
@@ -168,50 +172,82 @@ class _RadioPlayerPageState extends ConsumerState<RadioPlayerPage> {
                                       scale,
                                     ),
                                   ),
-                                  child: Center(
-                                    child: Column(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        _MainPlayerCard(
-                                          width: w.clamp(
-                                            AppSpacing.panelWidthCompact,
-                                            panelWidth,
+                                  child: LayoutBuilder(
+                                    builder: (context, innerConstraints) {
+                                      return SingleChildScrollView(
+                                        clipBehavior: Clip.none,
+                                        physics:
+                                            const ClampingScrollPhysics(),
+                                        child: ConstrainedBox(
+                                          constraints: BoxConstraints(
+                                            minHeight:
+                                                innerConstraints.maxHeight,
                                           ),
-                                          panelPaddingH: panelPaddingH,
-                                          cardColor: cardColor,
-                                          isDark: isDark,
-                                          scale: scale,
-                                          isCompactHeight: isCompact,
-                                          narrowMobile: isNarrow,
-                                          isPlaying: ui.isPlaying,
-                                          isBuffering:
-                                              isBufferingUiLifecycle(ui.lifecycle),
-                                          isLiveMode: ui.isLiveMode,
-                                          isEnDirect: ui.isEnDirect,
-                                          livePulseActive: ui.livePulseActive &&
-                                              ui.isEnDirect,
-                                          onLiveIndicatorTap: ui.isEnDirect
-                                              ? player.toggleLivePulse
-                                              : null,
-                                          chipGrey: chipGrey,
-                                          timerTrayColor: timerTrayColor,
-                                          titleColor: titleColor,
-                                          timerColor: timerColor,
-                                          elapsed: ui.elapsed,
-                                          onTimerTap: player.resetElapsed,
+                                          child: Center(
+                                            child: Column(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                _MainPlayerCard(
+                                                  width: AppSpacing
+                                                      .clampCardContentWidth(
+                                                    contentWidth:
+                                                        innerConstraints
+                                                            .maxWidth,
+                                                    panelCap: panelWidth,
+                                                  ),
+                                                  panelPaddingH: panelPaddingH,
+                                                  cardColor: cardColor,
+                                                  isDark: isDark,
+                                                  scale: scale,
+                                                  isCompactHeight: isCompact,
+                                                  narrowMobile: isNarrow,
+                                                  isPlaying: ui.isPlaying,
+                                                  isBuffering:
+                                                      isBufferingUiLifecycle(
+                                                    ui.lifecycle,
+                                                  ),
+                                                  isLiveMode: ui.isLiveMode,
+                                                  isEnDirect: ui.isEnDirect,
+                                                  livePulseActive: ui
+                                                          .livePulseActive &&
+                                                      ui.isEnDirect,
+                                                  onLiveIndicatorTap: ui
+                                                          .isEnDirect
+                                                      ? player.toggleLivePulse
+                                                      : null,
+                                                  chipGrey: chipGrey,
+                                                  timerTrayColor:
+                                                      timerTrayColor,
+                                                  titleColor: titleColor,
+                                                  timerColor: timerColor,
+                                                  elapsed: ui.elapsed,
+                                                  onTimerTap:
+                                                      player.resetElapsed,
+                                                ),
+                                                if (ui.errorMessage !=
+                                                    null) ...[
+                                                  SizedBox(
+                                                    height: AppSpacing.g(
+                                                      3,
+                                                      scale,
+                                                    ),
+                                                  ),
+                                                  _ErrorBanner(
+                                                    message:
+                                                        ui.errorMessage!,
+                                                    scale: scale,
+                                                    onRetry:
+                                                        player.retryAfterError,
+                                                  ),
+                                                ],
+                                              ],
+                                            ),
+                                          ),
                                         ),
-                                        if (ui.errorMessage != null) ...[
-                                          SizedBox(
-                                              height: AppSpacing.g(3, scale)),
-                                          _ErrorBanner(
-                                            message: ui.errorMessage!,
-                                            scale: scale,
-                                            onRetry: player.retryAfterError,
-                                          ),
-                                        ],
-                                      ],
-                                    ),
+                                      );
+                                    },
                                   ),
                                 ),
                               ),
@@ -289,22 +325,20 @@ class _BibleFmHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final w = MediaQuery.sizeOf(context).width;
     final titleFont = AppSpacing.responsiveBrandTitleFontSize(w, scale);
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: AppSpacing.gHalf(scale)),
-      child: Row(
-        children: [
-          Text(
-            'BIBLE FM',
-            style: GoogleFonts.russoOne(
-              color: titleColor,
-              fontSize: titleFont,
-              letterSpacing: AppSpacing.gHalf(scale) * 0.3,
-            ),
+    // Sem padding horizontal extra: alinha com as margens do cartão ([sidePadding]).
+    return Row(
+      children: [
+        Text(
+          'BIBLE FM',
+          style: GoogleFonts.russoOne(
+            color: titleColor,
+            fontSize: titleFont,
+            letterSpacing: AppSpacing.gHalf(scale) * 0.3,
           ),
-          const Spacer(),
-          AppThemeModeToggle(layoutScale: scale),
-        ],
-      ),
+        ),
+        const Spacer(),
+        AppThemeModeToggle(layoutScale: scale),
+      ],
     );
   }
 }

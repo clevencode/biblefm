@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/widgets.dart';
 
 // ---------------------------------------------------------------------------
@@ -7,8 +9,14 @@ import 'package:flutter/widgets.dart';
 // **Mobile-first**
 // - Desenhar e testar primeiro em ~360–390 pt de largura; só depois tablet /
 //   paisagem ([AppLayoutBreakpoints]).
-// - [mobileLayoutScale] uniformiza margens e tipografia em função do menor
-//   lado do ecrã (referência 390 pt), mantendo múltiplos de 8 pt lógicos.
+// - [mobileLayoutScale] parte do **telemóvel típico** (~360–390 pt); só depois
+//   amplia em tablet. Referência 390 pt no menor lado, sem encolher demais o alvo de toque.
+//
+// **Android — estrutura de conteúdo (Material / guia mobile)**
+// - Margens laterais compactas ~16 dp nas bordas do corpo; ampliar em ecrãs
+//   maiores — ver [margens de conteúdo](https://developer.android.com/design/ui/mobile/guides/layout-and-content/content-structure?hl=pt-br).
+// - Contenção explícita (cartões) + espaço em branco para agrupar; alinhar
+//   blocos à mesma grelha; respeitar encartes da barra de sistema (SafeArea).
 //
 // **Grelha 8 pt**
 // - Espaçamento estrutural: sempre [g] com **n inteiro** → n × 8 pt × escala.
@@ -33,14 +41,18 @@ abstract final class AppSpacing {
   /// Alvo mínimo de toque (Material Design).
   static const double minTouchTarget = 48;
 
-  /// Larguras máximas de painel (múltiplos de 8).
+  /// Larguras máximas de painel (múltiplos de 8) — pensadas primeiro para telemóvel.
   static const double panelWidthCompact = 280;
-  static const double panelWidthPhone = 440;
+  /// Alvo máximo em **retrato telefone** (~largura útil; não assumir ecrã desktop).
+  static const double panelWidthPhone = 384;
   static const double panelWidthTablet = 456;
 
-  /// Escala pelo menor lado do ecrã (referência ~390pt largura típica).
+  /// Referência de layout mobile-first (menor lado típico de um telemóvel).
+  static const double layoutReferenceShortestSidePt = 390;
+
+  /// Escala pelo menor lado: 1,0 ≈ telemóvel de referência; tablet cresce pouco.
   static double mobileLayoutScale(double shortestSide) =>
-      (shortestSide / 390).clamp(0.84, 1.12).toDouble();
+      (shortestSide / layoutReferenceShortestSidePt).clamp(0.9, 1.1).toDouble();
 
   /// `n` × 8pt × escala — use **n inteiro** para manter a grelha.
   static double g(int n, double layoutScale) => n * grid * layoutScale;
@@ -69,9 +81,11 @@ abstract final class AppSpacing {
   static int marginPanelInnerHorizontalSteps({required bool narrow}) =>
       narrow ? 2 : 3;
 
-  /// Margens laterais da barra **live + play** (mais próximas da borda).
+  /// Margens laterais da barra **live + play** — alinhadas à mesma base que o
+  /// corpo (~16 dp em telas estreitas, 24 dp em mais largas), p. ex. ações
+  /// principais dentro das margens do conteúdo.
   static int marginTransportHorizontalSteps({required bool narrow}) =>
-      narrow ? 1 : 2;
+      narrow ? 2 : 3;
 
   /// Espaço entre a barra de transporte e o fundo seguro (acima do home indicator).
   static const int transportBottomMarginSteps = 2;
@@ -83,14 +97,42 @@ abstract final class AppSpacing {
   static int transportStackGapSteps({required bool compactHeight}) =>
       compactHeight ? 2 : 3;
 
-  /// Tamanho base do botão play/live em passos (altura/diâmetro).
+  /// Diâmetro play / altura da pílula live em **passos da grelha** (mobile-first).
+  ///
+  /// Base = retrato em telemóvel típico (~11 → 88 pt em escala 1); ecrãs estreitos
+  /// ou baixos reduzem um passo; tablet ou paisagem larga aumentam.
   static int playControlDiameterSteps({
-    required bool narrow,
-    required bool compactHeight,
+    required double layoutWidth,
+    required double layoutHeight,
   }) {
-    if (narrow) return 12;
-    if (compactHeight) return 13;
-    return 14;
+    final narrow = AppLayoutBreakpoints.isNarrow(layoutWidth);
+    final compactH = AppLayoutBreakpoints.isCompactHeight(layoutHeight);
+    final tablet = AppLayoutBreakpoints.isTablet(layoutWidth);
+    final landscape =
+        AppLayoutBreakpoints.isLandscape(layoutWidth, layoutHeight);
+
+    var steps = 11;
+    if (tablet) {
+      steps = 13;
+    } else if (landscape && !narrow) {
+      steps = 12;
+    }
+    if (narrow) steps -= 1;
+    if (compactH) steps -= 1;
+
+    return steps.clamp(
+      playControlDiameterMinSteps,
+      playControlDiameterMaxSteps,
+    );
+  }
+
+  /// Largura do cartão dentro da área já com margens: nunca excede a largura útil.
+  static double clampCardContentWidth({
+    required double contentWidth,
+    required double panelCap,
+  }) {
+    if (contentWidth <= 0) return 0;
+    return math.min(contentWidth, panelCap);
   }
 
   static const int playControlDiameterMinSteps = 9;
@@ -100,16 +142,17 @@ abstract final class AppSpacing {
   static int livePillMinWidthSteps({required bool narrow}) =>
       narrow ? 17 : 15;
 
-  /// Título de marca (ex. cabeçalho): fluido com a largura, limitado a
-  /// **3–4 passos** da grelha (24–32 pt em escala 1).
+  /// Título de marca: escala com a largura até ~430 pt (mobile-first), depois estabiliza.
   static double responsiveBrandTitleFontSize(double width, double layoutScale) {
-    final raw = width * 0.076 * layoutScale;
+    final baseW = math.min(width, 430);
+    final raw = baseW * 0.076 * layoutScale;
     return raw.clamp(g(3, layoutScale), g(4, layoutScale));
   }
 
-  /// Tamanho principal do contador digital: fluido, entre **3 e 6** passos.
+  /// Contador digital: mesma lógica — evita tipos enormes só porque o ecrã é largo.
   static double responsiveTimerValueFontSize(double width, double layoutScale) {
-    final raw = width * 0.118 * layoutScale;
+    final baseW = math.min(width, 430);
+    final raw = baseW * 0.118 * layoutScale;
     return raw.clamp(g(3, layoutScale), g(6, layoutScale));
   }
 }
@@ -133,11 +176,18 @@ abstract final class AppLayoutBreakpoints {
   static bool isTablet(double width) => width >= tablet;
   static bool isLandscape(double width, double height) => width > height;
 
-  /// Largura máxima do cartão: mobile-first, depois tablet.
+  /// Largura máxima do cartão (largura **total** da janela útil): telemóvel primeiro.
   static double maxPanelWidth(double width, double height, double scale) {
-    if (isLandscape(width, height)) return width * 0.74;
-    if (isTablet(width)) return AppSpacing.panelWidthTablet;
-    return AppSpacing.panelWidthPhone * scale;
+    if (isLandscape(width, height)) {
+      return math.min(width * 0.74, AppSpacing.panelWidthTablet);
+    }
+    if (isTablet(width)) {
+      return math.min(AppSpacing.panelWidthTablet, width * 0.88);
+    }
+    return math.min(
+      AppSpacing.panelWidthPhone * scale,
+      width,
+    );
   }
 
   /// Cantos do cartão do player (pt lógicos antes de × [layoutScale]).

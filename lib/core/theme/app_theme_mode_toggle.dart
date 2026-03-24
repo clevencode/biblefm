@@ -18,9 +18,10 @@ class AppThemeModeToggle extends ConsumerWidget {
     final dragging = ref.watch(themeDragActiveProvider);
     final lightOn = blend < 0.5;
 
-    final h = AppSpacing.g(6, layoutScale);
-    final w = AppSpacing.g(15, layoutScale);
-    final iconSize = AppSpacing.g(2, layoutScale);
+    // Dimensões ancoradas no telemóvel (trilho mais baixo que no tablet/desktop).
+    final h = AppSpacing.g(5, layoutScale);
+    final w = AppSpacing.g(13, layoutScale);
+    final iconSize = AppSpacing.g(2, layoutScale) * 0.95;
     final radius = BorderRadius.circular(h / 2);
     final inset = AppSpacing.gHalf(layoutScale);
 
