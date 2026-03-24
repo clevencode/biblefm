@@ -319,24 +319,6 @@ abstract final class AppTheme {
   static Color transportPlayIcon(Brightness brightness) =>
       brightness == Brightness.light ? Colors.white : _notionInk;
 
-  /// Pílula **live** / pausa: branco puro (claro) ou painel #2F2F2F (escuro) — bloco sólido Notion.
-  static Color transportLiveFill(Brightness brightness) =>
-      brightness == Brightness.light
-          ? Colors.white
-          : const Color(0xFF2F2F2F);
-
-  /// Pílula **différé**: papel com lavagem muito suave de âmbar (alinhada ao indicador).
-  static Color transportLiveFillDeferred(Brightness brightness) {
-    final base = brightness == Brightness.light
-        ? const Color(0xFFF3F2EF)
-        : const Color(0xFF252525);
-    return Color.lerp(
-      base,
-      transportDeferredPulseColor(brightness),
-      brightness == Brightness.light ? 0.08 : 0.14,
-    )!;
-  }
-
   static Color transportLiveIcon(Brightness brightness) =>
       brightness == Brightness.light ? _notionInk : const Color(0xFFE6E6E4);
 
@@ -346,18 +328,13 @@ abstract final class AppTheme {
           ? const Color(0xFFE3E2E0)
           : const Color(0xFF4A4A4A);
 
-  static Color transportDeferredBorder(Brightness brightness) =>
-      transportDeferredPulseColor(brightness).withValues(
-        alpha: brightness == Brightness.light ? 0.44 : 0.52,
-      );
-
   /// Círculo do indicador de pulso em **en direct** (a reproduzir).
   static Color transportLivePulseColor(Brightness brightness) =>
       brightness == Brightness.light
           ? const Color(0xFF0F7B6C)
           : const Color(0xFF4DAB9A);
 
-  /// Tom **âmbar / amarelo** suave para différé (pílula de estado, indicador, barra de transporte).
+  /// Tom **âmbar / amarelo** suave (pílula de estado, indicador «en écoute»).
   static Color transportDeferredPulseColor(Brightness brightness) =>
       brightness == Brightness.light
           ? const Color(0xFFC2760A)
@@ -398,7 +375,7 @@ abstract final class AppTheme {
     )!;
   }
 
-  /// Borda da pílula de estado: eco do verde (live), âmbar (différé) ou vermelho (pause).
+  /// Borda da pílula de estado: eco do verde (live), âmbar (écoute) ou vermelho (pause).
   static Color statusPillBorder({
     required ColorScheme scheme,
     required Brightness brightness,
@@ -415,10 +392,6 @@ abstract final class AppTheme {
     }
     return Color.lerp(edge, transportDeferredPulseColor(brightness), 0.40)!;
   }
-
-  /// Compatibilidade: gradiente claro Notion (substitui o nome antigo W11).
-  static const LinearGradient win11LightBackgroundGradient =
-      notionLightBackgroundGradient;
 
   static Color footerSurfaceColor(ColorScheme scheme) =>
       Color.lerp(scheme.surface, scheme.surfaceContainerLowest, 0.72)!;

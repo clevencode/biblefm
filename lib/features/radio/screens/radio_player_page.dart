@@ -693,7 +693,7 @@ class _PlaybackStatusChip extends StatelessWidget {
     final brightness = Theme.of(context).brightness;
     final isListening = isPlaying && !isBuffering;
     final label = isListening
-        ? (isLiveMode ? 'En direct' : 'Différé')
+        ? (isLiveMode ? 'En direct' : 'En écoute')
         : 'En pause';
 
     final pillBg = AppTheme.statusPillBackground(
