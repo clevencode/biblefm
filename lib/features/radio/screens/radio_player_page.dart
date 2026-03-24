@@ -180,6 +180,7 @@ class _RadioPlayerPageState extends State<RadioPlayerPage> {
                                           isBuffering:
                                               isBufferingUiLifecycle(ui.lifecycle),
                                           isLiveMode: ui.isLiveMode,
+                                          isEnDirect: ui.isEnDirect,
                                           livePulseActive: ui.livePulseActive &&
                                               ui.isEnDirect,
                                           onLiveIndicatorTap: ui.isEnDirect
@@ -450,6 +451,7 @@ class _MainPlayerCard extends StatelessWidget {
     required this.isPlaying,
     required this.isBuffering,
     required this.isLiveMode,
+    required this.isEnDirect,
     required this.livePulseActive,
     required this.onLiveIndicatorTap,
     required this.chipGrey,
@@ -470,6 +472,7 @@ class _MainPlayerCard extends StatelessWidget {
   final bool isPlaying;
   final bool isBuffering;
   final bool isLiveMode;
+  final bool isEnDirect;
   final bool livePulseActive;
   final VoidCallback? onLiveIndicatorTap;
   final Color chipGrey;
@@ -530,7 +533,7 @@ class _MainPlayerCard extends StatelessWidget {
                 ),
                 LivePulsingIndicator(
                   scale: scale,
-                  isLiveMode: isLiveMode,
+                  isEnDirect: isEnDirect,
                   pulseEnabled: livePulseActive,
                   onTap: onLiveIndicatorTap,
                 ),

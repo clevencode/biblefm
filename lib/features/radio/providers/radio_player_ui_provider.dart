@@ -80,7 +80,28 @@ final radioPlayerUiProvider =
 class RadioPlayerUiNotifier extends StateNotifier<RadioPlayerUiState> {
   RadioPlayerUiNotifier() : super(RadioPlayerUiState.initial());
 
+  /// Passo de «rattrapage» vers le direct (mock). Plusieurs taps après pause
+  /// rapprochent le compteur du bord live sans le ramener à zéro d’un coup.
+  static const Duration _liveCatchUpChunk = Duration(seconds: 30);
+
+  /// Plancher après un tap live : ne pas effacer le contador (≠ 0).
+  static const Duration _minElapsedAfterLiveTap = Duration(seconds: 1);
+
   Timer? _elapsedTicker;
+
+  /// Avança o contador em direcção ao instante mais recente, em [chunk]s,
+  /// sem [Duration.zero] imposto por um único toque.
+  Duration _elapsedAfterLiveTap(Duration current, {required bool consumeSync}) {
+    if (!consumeSync) return current;
+    if (current <= Duration.zero) {
+      return _minElapsedAfterLiveTap;
+    }
+    final reduced = current - _liveCatchUpChunk;
+    if (reduced < _minElapsedAfterLiveTap) {
+      return _minElapsedAfterLiveTap;
+    }
+    return reduced;
+  }
 
   @override
   void dispose() {
@@ -168,11 +189,15 @@ class RadioPlayerUiNotifier extends StateNotifier<RadioPlayerUiState> {
   void liveTap() {
     if (!state.canTapLive) return;
     final sync = state.liveSyncEligible;
+    final nextElapsed = _elapsedAfterLiveTap(
+      state.elapsed,
+      consumeSync: sync,
+    );
     _emit(
       state.copyWith(
         isLiveMode: true,
         errorMessage: null,
-        elapsed: sync ? Duration.zero : state.elapsed,
+        elapsed: nextElapsed,
         lifecycle: UiPlaybackLifecycle.playing,
         liveSyncEligible: false,
       ),

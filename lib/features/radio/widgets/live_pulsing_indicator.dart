@@ -2,21 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:meu_app/core/theme/app_spacing.dart';
 import 'package:meu_app/core/theme/app_theme.dart';
 
-/// Indicador «ao vivo»: vermelho em direct; cinza quando não está em [isLiveMode].
-/// [pulseEnabled] controla o pulso (só relevante em direct).
-/// [onTap] — ex.: só em «en direct» o pai ativa a animação.
+/// Indicador «ao vivo»: vermelho **só** em [isEnDirect]; fora disso cinza.
+/// [pulseEnabled] controla o pulso (só en direct).
 class LivePulsingIndicator extends StatefulWidget {
   const LivePulsingIndicator({
     super.key,
     required this.scale,
-    required this.isLiveMode,
+    required this.isEnDirect,
     required this.pulseEnabled,
     this.onTap,
     this.tooltip,
   });
 
   final double scale;
-  final bool isLiveMode;
+  final bool isEnDirect;
   final bool pulseEnabled;
   final VoidCallback? onTap;
 
@@ -29,12 +28,14 @@ class LivePulsingIndicator extends StatefulWidget {
 
 class _LivePulsingIndicatorState extends State<LivePulsingIndicator>
     with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
+  late AnimationController _pulseController;
+
+  static const Color _liveRed = Color(0xFFE53935);
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
+    _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1600),
     );
@@ -45,16 +46,16 @@ class _LivePulsingIndicatorState extends State<LivePulsingIndicator>
   void didUpdateWidget(LivePulsingIndicator oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.pulseEnabled != widget.pulseEnabled ||
-        oldWidget.isLiveMode != widget.isLiveMode) {
+        oldWidget.isEnDirect != widget.isEnDirect) {
       _syncPulseAnimation();
     }
   }
 
   void _syncPulseAnimation() {
-    if (widget.isLiveMode && widget.pulseEnabled) {
-      _controller.repeat();
+    if (widget.isEnDirect && widget.pulseEnabled) {
+      _pulseController.repeat();
     } else {
-      _controller
+      _pulseController
         ..stop()
         ..reset();
     }
@@ -62,7 +63,7 @@ class _LivePulsingIndicatorState extends State<LivePulsingIndicator>
 
   @override
   void dispose() {
-    _controller.dispose();
+    _pulseController.dispose();
     super.dispose();
   }
 
@@ -96,11 +97,17 @@ class _LivePulsingIndicatorState extends State<LivePulsingIndicator>
     final s = widget.scale;
     final coreD = AppSpacing.g(2, s) - AppSpacing.gHalf(s) * 0.5;
     final outerSize = AppSpacing.g(4, s);
-    const liveRed = Color(0xFFE53935);
-    final idleGray = scheme.outline;
-    final accent = widget.isLiveMode ? liveRed : idleGray;
+    final idleGray = Color.lerp(
+      scheme.outline,
+      scheme.onSurfaceVariant,
+      isDark ? 0.22 : 0.35,
+    )!;
+    final accent = widget.isEnDirect ? _liveRed : idleGray;
+    final shadowColor = widget.isEnDirect
+        ? const Color(0x33E53935)
+        : scheme.shadow.withValues(alpha: isDark ? 0.35 : 0.12);
 
-    final defaultTooltip = !widget.isLiveMode
+    final defaultTooltip = !widget.isEnDirect
         ? 'Lecture différée (pas en direct)'
         : widget.onTap == null
             ? 'Signal du direct (fixe). Passez en direct pour l’animer.'
@@ -112,7 +119,7 @@ class _LivePulsingIndicatorState extends State<LivePulsingIndicator>
 
     final String a11yLabel;
     final String? a11yHint;
-    if (!widget.isLiveMode) {
+    if (!widget.isEnDirect) {
       a11yLabel = 'Indicateur différé, pas en direct';
       a11yHint = null;
     } else if (widget.onTap == null) {
@@ -135,14 +142,11 @@ class _LivePulsingIndicatorState extends State<LivePulsingIndicator>
           width: outerSize,
           height: outerSize,
           child: AnimatedBuilder(
-            animation: _controller,
+            animation: _pulseController,
             builder: (context, child) {
-              final t = widget.isLiveMode && widget.pulseEnabled
-                  ? _controller.value
+              final t = widget.isEnDirect && widget.pulseEnabled
+                  ? _pulseController.value
                   : 0.0;
-              final shadowColor = widget.isLiveMode
-                  ? const Color(0x33E53935)
-                  : scheme.shadow.withValues(alpha: isDark ? 0.35 : 0.12);
               return Stack(
                 alignment: Alignment.center,
                 clipBehavior: Clip.none,
@@ -189,7 +193,6 @@ class _LivePulsingIndicatorState extends State<LivePulsingIndicator>
       );
     }
 
-    // Cible tactile ~48 pt (Material) autour du pictogramme.
     final minSide = AppSpacing.g(6, s);
     indicator = ConstrainedBox(
       constraints: BoxConstraints(

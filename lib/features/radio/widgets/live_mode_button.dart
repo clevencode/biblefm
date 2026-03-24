@@ -22,6 +22,7 @@ class LiveModeButton extends StatelessWidget {
   final bool isPaused;
   final VoidCallback? onPressed;
   final double scale;
+
   /// Diâmetro do play à direita; na pílula é a **altura** do comprimido.
   final double size;
   final bool isDark;
@@ -34,8 +35,7 @@ class LiveModeButton extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final iconColor = isDark ? scheme.onSurface : const Color(0xFF141414);
     // Pílula alinhada ao tema escuro (superfícies + contorno).
-    final fillColor =
-        isDark ? scheme.surfaceContainerHighest : Colors.white;
+    final fillColor = isDark ? scheme.surfaceContainerHighest : Colors.white;
     final borderColor = isDark
         ? scheme.outline.withValues(alpha: 0.55)
         : Colors.black.withValues(alpha: 0.18);
@@ -49,15 +49,15 @@ class LiveModeButton extends StatelessWidget {
     String semanticsLabel;
     String tooltipMsg;
     if (isLiveMode && isPaused && canTap) {
-      semanticsLabel = 'Mettre le compteur à jour sur le direct';
-      tooltipMsg = 'Aligner le compteur sur le direct (temps le plus récent)';
+      semanticsLabel = 'Rattraper le direct par paliers';
+      tooltipMsg =
+          'Rapprocher le compteur du direct sans remettre à zéro (répéter après pause)';
     } else if (isLiveMode && !isPaused) {
       semanticsLabel = 'Direct actif';
       tooltipMsg = 'Direct actif';
     } else if (!canTap) {
       semanticsLabel = 'Direct : mettre la lecture en pause pour activer';
-      tooltipMsg =
-          'Mettre la lecture en pause pour activer l’écoute du direct';
+      tooltipMsg = 'Mettre la lecture en pause pour activer l’écoute du direct';
     } else {
       semanticsLabel = 'Passer en écoute du direct';
       tooltipMsg = 'Écouter le direct';
@@ -94,13 +94,13 @@ class LiveModeButton extends StatelessWidget {
       hoverColor: !canTap
           ? Colors.transparent
           : (isDark
-              ? AppTheme.darkHoverOverlay(scheme)
-              : Colors.black.withValues(alpha: 0.06)),
+                ? AppTheme.darkHoverOverlay(scheme)
+                : Colors.black.withValues(alpha: 0.06)),
       splashColor: !canTap
           ? Colors.transparent
           : (isDark
-              ? AppTheme.darkHoverOverlay(scheme)
-              : Colors.black.withValues(alpha: 0.08)),
+                ? AppTheme.darkHoverOverlay(scheme)
+                : Colors.black.withValues(alpha: 0.08)),
       highlightColor: !canTap ? Colors.transparent : null,
       onTap: onPressed,
       child: AnimatedContainer(
