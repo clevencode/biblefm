@@ -4,6 +4,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:meu_app/core/network/network_connectivity_provider.dart';
+import 'package:meu_app/core/platform/android_post_notifications.dart';
 import 'package:meu_app/core/theme/app_spacing.dart';
 import 'package:meu_app/core/theme/app_theme.dart';
 import 'package:meu_app/core/theme/app_theme_mode_toggle.dart';
@@ -32,21 +34,36 @@ class _RadioPlayerPageState extends ConsumerState<RadioPlayerPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(ensureAndroidPostNotificationsPermission());
+    });
     _schedulePlaybackAfterFirstFrame();
   }
 
-  /// Espera um frame renderizado para não competir com o layout/tema no arranque.
+  /// Espera um frame e a primeira leitura de rede antes do arranque automático.
   void _schedulePlaybackAfterFirstFrame() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      unawaited(
-        ref.read(radioPlayerUiProvider.notifier).autoStartLivePlayback(),
-      );
+      unawaited(_maybeAutoStartAfterConnectivity());
     });
+  }
+
+  Future<void> _maybeAutoStartAfterConnectivity() async {
+    if (!mounted) return;
+    await ref.read(networkOfflineProvider.notifier).initialConnectivityFuture;
+    if (!mounted) return;
+    if (ref.read(networkOfflineProvider)) return;
+    await ref.read(radioPlayerUiProvider.notifier).autoStartLivePlayback();
   }
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<bool>(networkOfflineProvider, (previous, next) {
+      if (previous == true && next == false) {
+        ref.read(radioPlayerUiProvider.notifier).onConnectivityRestored();
+      }
+    });
+
     final ui = ref.watch(radioPlayerUiProvider);
     final player = ref.read(radioPlayerUiProvider.notifier);
     final scheme = Theme.of(context).colorScheme;
@@ -57,6 +74,7 @@ class _RadioPlayerPageState extends ConsumerState<RadioPlayerPage> {
     final timerColor = scheme.onSurface;
 
     final showStreamLoading = isBufferingUiLifecycle(ui.lifecycle);
+    final isOffline = ref.watch(networkOfflineProvider);
 
     return Semantics(
       container: true,
@@ -195,6 +213,15 @@ class _RadioPlayerPageState extends ConsumerState<RadioPlayerPage> {
                                                   MainAxisAlignment.center,
                                               mainAxisSize: MainAxisSize.min,
                                               children: [
+                                                if (isOffline) ...[
+                                                  _OfflineBanner(scale: scale),
+                                                  SizedBox(
+                                                    height: AppSpacing.g(
+                                                      3,
+                                                      scale,
+                                                    ),
+                                                  ),
+                                                ],
                                                 _MainPlayerCard(
                                                   width:
                                                       AppSpacing.clampCardContentWidth(
@@ -438,6 +465,84 @@ class _MainPlayerCard extends StatelessWidget {
             narrowMobile: narrowMobile,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _OfflineBanner extends StatelessWidget {
+  const _OfflineBanner({required this.scale});
+
+  final double scale;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Semantics(
+      container: true,
+      label:
+          'Sem ligação à Internet. Ligue os dados móveis ou o Wi‑Fi para ouvir a rádio.',
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          width: double.infinity,
+          padding: AppSpacing.insetSymmetric(
+            layoutScale: scale,
+            horizontal: 2,
+            vertical: 1,
+          ),
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainerHighest.withValues(
+              alpha: isDark ? 0.42 : 0.72,
+            ),
+            borderRadius:
+                AppRadii.borderRadius(AppTheme.notionBlockRadius, scale),
+            border: Border.all(
+              color: scheme.outline.withValues(alpha: isDark ? 0.48 : 0.62),
+              width: 1,
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.wifi_off_rounded,
+                color: scheme.primary,
+                size: AppSpacing.g(3, scale),
+              ),
+              SizedBox(width: AppSpacing.g(2, scale)),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Sem ligação à Internet',
+                      style: GoogleFonts.inter(
+                        fontSize: AppTypeScale.body * scale,
+                        fontWeight: FontWeight.w600,
+                        color: scheme.onSurface,
+                        height: 1.35,
+                      ),
+                    ),
+                    SizedBox(height: AppSpacing.gHalf(scale)),
+                    Text(
+                      'Ligue os dados móveis ou o Wi‑Fi para ouvir a rádio.',
+                      style: GoogleFonts.inter(
+                        fontSize: AppTypeScale.label * scale,
+                        fontWeight: FontWeight.w500,
+                        color: scheme.onSurfaceVariant,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

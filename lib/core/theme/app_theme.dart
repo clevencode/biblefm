@@ -27,6 +27,10 @@ abstract final class AppTheme {
   static const Color _notionBlueDark = Color(0xFF529CCA);
   static const Color _notionRed = Color(0xFFEB5757);
 
+  /// Fundo **opaco** da notificação MediaStyle no Android (recomendado pelo
+  /// `audio_service`: contraste com ícone branco monocromático e barra de acções).
+  static const Color mediaNotificationBackground = Color(0xFF1565A0);
+
   /// Fundo claro: cinzento quente tipo sidebar + página (sem gradiente forte).
   static const LinearGradient notionLightBackgroundGradient = LinearGradient(
     begin: Alignment.topCenter,

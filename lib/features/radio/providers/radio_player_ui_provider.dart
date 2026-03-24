@@ -226,9 +226,13 @@ class RadioPlayerUiNotifier extends StateNotifier<RadioPlayerUiState> {
     return AudioSource.uri(
       Uri.parse(kBibleFmLiveStreamUrl),
       tag: MediaItem(
-        id: 'biblefm-live',
-        album: 'Bible FM',
-        title: 'En direct',
+        id: kBibleFmMediaItemId,
+        title: kBibleFmNotificationTitle,
+        displayTitle: kBibleFmNotificationTitle,
+        artist: kBibleFmNotificationArtist,
+        displayDescription: kBibleFmNotificationDescription,
+        genre: kBibleFmMediaGenre,
+        isLive: true,
       ),
     );
   }
@@ -247,11 +251,33 @@ class RadioPlayerUiNotifier extends StateNotifier<RadioPlayerUiState> {
   }
 
   static String _loadErrorMessage(Object e) {
-    final msg = e.toString();
-    if (msg.length > 160) {
-      return '${msg.substring(0, 157)}…';
+    final raw = e.toString();
+    final lower = raw.toLowerCase();
+    if (lower.contains('socketexception') ||
+        lower.contains('failed host lookup') ||
+        lower.contains('network is unreachable') ||
+        lower.contains('connection refused') ||
+        lower.contains('connection reset')) {
+      return 'Sem ligação ao servidor. Verifique a rede.';
     }
-    return msg;
+    if (lower.contains('timeout') || lower.contains('timed out')) {
+      return 'Tempo esgotado. Tente novamente.';
+    }
+    if (lower.contains('certificate') || lower.contains('handshake')) {
+      return 'Erro de segurança na ligação (TLS). Tente mais tarde.';
+    }
+    if (raw.length > 160) {
+      return '${raw.substring(0, 157)}…';
+    }
+    return raw;
+  }
+
+  /// Chamado quando a interface de rede volta (ex.: Wi‑Fi/dados). Limpa erro
+  /// «pendente» em idle para o utilizador voltar a iniciar sem passo extra.
+  void onConnectivityRestored() {
+    if (state.lifecycle != UiPlaybackLifecycle.idle) return;
+    if (state.errorMessage == null) return;
+    _emit(state.copyWith(errorMessage: null));
   }
 
   /// Arranque da app: inicia a reprodução e activa o modo **direct** (como play + live).
