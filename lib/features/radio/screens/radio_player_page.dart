@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:meu_app/core/app/app_restart.dart';
 import 'package:meu_app/core/network/network_connectivity_provider.dart';
 import 'package:meu_app/core/platform/android_post_notifications.dart';
 import 'package:meu_app/core/theme/app_spacing.dart';
@@ -88,7 +89,7 @@ class _RadioPlayerPageState extends ConsumerState<RadioPlayerPage> {
     final titleColor = scheme.onSurface;
     final timerColor = scheme.onSurface;
 
-    final showStreamLoading = isBufferingUiLifecycle(ui.lifecycle);
+    final showStreamLoading = isTransportLoadingUiLifecycle(ui.lifecycle);
     final networkLink = ref.watch(networkLinkProvider);
     final isOffline = networkLink.isOffline;
 
@@ -285,7 +286,7 @@ class _RadioPlayerPageState extends ConsumerState<RadioPlayerPage> {
                                                   narrowMobile: isNarrow,
                                                   isPlaying: ui.isPlaying,
                                                   isBuffering:
-                                                      isBufferingUiLifecycle(
+                                                      isTransportLoadingUiLifecycle(
                                                         ui.lifecycle,
                                                       ),
                                                   isLiveMode: ui.isLiveMode,
@@ -351,7 +352,7 @@ class _RadioPlayerPageState extends ConsumerState<RadioPlayerPage> {
                             isPlaying: ui.isPlaying,
                             isPaused:
                                 ui.lifecycle == UiPlaybackLifecycle.paused,
-                            isBuffering: isBufferingUiLifecycle(ui.lifecycle),
+                            isBuffering: isTransportLoadingUiLifecycle(ui.lifecycle),
                             isPreparing:
                                 ui.lifecycle == UiPlaybackLifecycle.preparing,
                             isLiveMode: ui.isLiveMode,
@@ -359,6 +360,14 @@ class _RadioPlayerPageState extends ConsumerState<RadioPlayerPage> {
                             onLiveTap: isOffline
                                 ? null
                                 : (ui.canTapLive ? player.liveTap : null),
+                            onOfflineRestartApp:
+                                !ui.isPlaying &&
+                                        !isTransportLoadingUiLifecycle(
+                                          ui.lifecycle,
+                                        ) &&
+                                        (isOffline || ui.errorMessage != null)
+                                    ? () => unawaited(restartApplication())
+                                    : null,
                           ),
                         ),
                       ),

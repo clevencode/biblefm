@@ -64,7 +64,7 @@ class LiveModeButton extends StatelessWidget {
     if (isOffline) {
       semanticsLabel = 'Direct indisponível sem rede';
       tooltipMsg = 'Sem ligação à Internet';
-    } else if (isBufferingUiLifecycle(playbackLifecycle)) {
+    } else if (isTransportLoadingUiLifecycle(playbackLifecycle)) {
       semanticsLabel = 'Directo após o fluxo estabilizar';
       tooltipMsg = 'Aguarde o fluxo estabilizar antes do directo';
     } else if (playbackLifecycle == UiPlaybackLifecycle.idle) {

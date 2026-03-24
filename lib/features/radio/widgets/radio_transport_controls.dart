@@ -19,6 +19,7 @@ class RadioTransportControls extends StatelessWidget {
     required this.isLiveMode,
     required this.onTransportTap,
     required this.onLiveTap,
+    this.onOfflineRestartApp,
   });
 
   final double scale;
@@ -30,6 +31,7 @@ class RadioTransportControls extends StatelessWidget {
   final UiPlaybackLifecycle playbackLifecycle;
   final bool isPlaying;
   final bool isPaused;
+  /// [preparing] ou [buffering] — ver [isTransportLoadingUiLifecycle].
   final bool isBuffering;
   /// Só [preparing] (antes de [buffering]) — texto distinto no botão play.
   final bool isPreparing;
@@ -39,15 +41,20 @@ class RadioTransportControls extends StatelessWidget {
   /// Botão live — só modo direct ([RadioPlayerUiNotifier.liveTap]); null se indisponível.
   final VoidCallback? onLiveTap;
 
+  /// Sem leitura activa: reiniciar a app (ícone atualizar); o pai define quando (offline, erro, …).
+  final VoidCallback? onOfflineRestartApp;
+
   @override
   Widget build(BuildContext context) {
+    final showRestartTransport =
+        onOfflineRestartApp != null && !isPlaying && !isBuffering;
     final playEnabled =
-        !isOffline || isPlaying || isBuffering;
+        !isOffline || isPlaying || isBuffering || showRestartTransport;
 
     return Semantics(
       container: true,
-      label: isOffline
-          ? 'Contrôles de lecture (hors ligne : pause ou annuler le chargement uniquement)'
+      label: isOffline || showRestartTransport
+          ? 'Contrôles : pause, annuler le chargement, ou reiniciar a app si besoin'
           : 'Ordre : lecture ou pause, puis direct à droite une fois le flux prêt',
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -62,6 +69,7 @@ class RadioTransportControls extends StatelessWidget {
             layoutScale: scale,
             enabled: playEnabled,
             isOffline: isOffline,
+            onOfflineRestartApp: onOfflineRestartApp,
           ),
           LiveModeButton(
             playbackLifecycle: playbackLifecycle,

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
@@ -44,7 +45,7 @@ class RadioPlayerUiState {
   /// - [playing] sem live: permite passar a modo live.
   /// - [playing] com live a tocar: não (já em direct).
   bool get canTapLive {
-    if (isBufferingUiLifecycle(lifecycle)) return false;
+    if (isTransportLoadingUiLifecycle(lifecycle)) return false;
     if (lifecycle == UiPlaybackLifecycle.idle) return false;
     if (lifecycle == UiPlaybackLifecycle.paused) return true;
     return !isLiveMode;
@@ -52,11 +53,11 @@ class RadioPlayerUiState {
 
   /// «En direct»: a tocar, sem buffer, com modo live.
   bool get isEnDirect =>
-      isPlaying && !isBufferingUiLifecycle(lifecycle) && isLiveMode;
+      isPlaying && !isTransportLoadingUiLifecycle(lifecycle) && isLiveMode;
 
-  /// O contador só avança em reprodução efectiva (não em buffering).
+  /// O contador só avança em reprodução efectiva (não durante load/buffer).
   bool get shouldRunElapsedTicker =>
-      isPlaying && !isBufferingUiLifecycle(lifecycle);
+      isPlaying && !isTransportLoadingUiLifecycle(lifecycle);
 
   RadioPlayerUiState copyWith({
     UiPlaybackLifecycle? lifecycle,
@@ -84,8 +85,8 @@ class RadioPlayerUiState {
 final radioPlayerUiProvider =
     StateNotifierProvider<RadioPlayerUiNotifier, RadioPlayerUiState>((ref) {
   final notifier = RadioPlayerUiNotifier(ref);
-  // Pausa/para o áudio quando a rede cai, mesmo fora da [RadioPlayerPage]
-  // (ex.: segundo plano). Ignora o primeiro evento ([previous] null).
+  // Perda de interface (ex.: Wi‑Fi desliga e não há outra — [offline]): pausa ou para o load.
+  // Wi‑Fi → dados móveis não passa por [offline], a leitura continua.
   ref.listen<RadioNetworkLink>(networkLinkProvider, (previous, next) {
     if (previous == null) return;
     if (next != RadioNetworkLink.offline) return;
@@ -104,6 +105,13 @@ final radioPlayerUiProvider =
 ///   ligação ao fluxo (borda ao vivo).
 /// - [retryAfterError], [pauseDueToNetworkLoss], [onConnectivityRestored] —
 ///   reacções de sistema / rede, não são botões de transporte.
+/// - Interrupções de áudio ([AudioSession.interruptionEventStream]): chamada,
+///   alarme, etc. — pausa alinhada à UI; retoma só se esta camada pausou ([_pausedForAudioInterruption]).
+///
+/// **Fluxo de carregamento:** [transportTap] em [idle] faz *optimistic* [preparing];
+/// as fases reais vêm de [AudioPlayer] via [_onPlayerState]. Anular o load (toque em
+/// transporte durante [preparing]/[buffering]) chama [_cancelActiveTransportLoad],
+/// que faz [stop], invalida a fonte em cache e volta a [idle].
 class RadioPlayerUiNotifier extends StateNotifier<RadioPlayerUiState> {
   RadioPlayerUiNotifier(this._ref) : super(RadioPlayerUiState.initial()) {
     _player = AudioPlayer();
@@ -111,6 +119,7 @@ class RadioPlayerUiNotifier extends StateNotifier<RadioPlayerUiState> {
       _onPlayerState,
       onError: _onPlayerStateError,
     );
+    unawaited(_subscribeAudioInterruptions());
   }
 
   final Ref _ref;
@@ -139,6 +148,11 @@ class RadioPlayerUiNotifier extends StateNotifier<RadioPlayerUiState> {
 
   late final AudioPlayer _player;
   StreamSubscription<PlayerState>? _playerStateSub;
+  StreamSubscription<AudioInterruptionEvent>? _interruptionSub;
+
+  /// `true` se a última pausa veio de interrupção do sistema (ex.: chamada);
+  /// usado para retomar só quando o SO devolver foco com [pause]/[duck].
+  bool _pausedForAudioInterruption = false;
 
   Timer? _elapsedTicker;
   bool _sourceLoaded = false;
@@ -164,6 +178,7 @@ class RadioPlayerUiNotifier extends StateNotifier<RadioPlayerUiState> {
   @override
   void dispose() {
     _elapsedTicker?.cancel();
+    unawaited(_interruptionSub?.cancel() ?? Future<void>.value());
     unawaited(_playerStateSub?.cancel() ?? Future<void>.value());
     unawaited(_player.dispose());
     super.dispose();
@@ -184,6 +199,116 @@ class RadioPlayerUiNotifier extends StateNotifier<RadioPlayerUiState> {
     );
   }
 
+  /// Interrompe load/buffer activo: [stop], marca fonte como não carregada, UI em [idle] écoute.
+  /// Responsabilidade única para cancelar carregamento (transporte ou rede em load).
+  Future<void> _cancelActiveTransportLoad() async {
+    _pausedForAudioInterruption = false;
+    _deferPlayerIdle = false;
+    try {
+      await _player.stop();
+    } catch (e, stack) {
+      if (kDebugMode) {
+        debugPrint('_cancelActiveTransportLoad stop: $e\n$stack');
+      }
+    }
+    _sourceLoaded = false;
+    _emit(
+      _ecouteLivePresentation(state).copyWith(
+        lifecycle: UiPlaybackLifecycle.idle,
+        errorMessage: null,
+      ),
+    );
+  }
+
+  Future<void> _subscribeAudioInterruptions() async {
+    try {
+      final session = await AudioSession.instance;
+      _interruptionSub = session.interruptionEventStream.listen(
+        _onAudioInterruptionEvent,
+        onError: (Object e, StackTrace st) {
+          if (kDebugMode) {
+            debugPrint('interruptionEventStream: $e\n$st');
+          }
+        },
+      );
+    } catch (e, stack) {
+      if (kDebugMode) {
+        debugPrint('_subscribeAudioInterruptions: $e\n$stack');
+      }
+    }
+  }
+
+  void _onAudioInterruptionEvent(AudioInterruptionEvent event) {
+    if (event.begin) {
+      unawaited(_onAudioInterruptionBegan());
+    } else {
+      unawaited(_onAudioInterruptionEnded(event.type));
+    }
+  }
+
+  /// Chamada / alarme / outro foco: pausa o leitor e alinha a UI (como perda de foco, não como erro de rede).
+  Future<void> _onAudioInterruptionBegan() async {
+    if (!state.isPlaying && !isTransportLoadingUiLifecycle(state.lifecycle)) {
+      return;
+    }
+    try {
+      await _player.pause();
+    } catch (e, stack) {
+      if (kDebugMode) {
+        debugPrint('_onAudioInterruptionBegan pause: $e\n$stack');
+      }
+    }
+    _pausedForAudioInterruption = true;
+    _emit(
+      _ecouteLivePresentation(state).copyWith(
+        lifecycle: _uiLifecycleFromPlayer(_player.playerState),
+      ),
+    );
+  }
+
+  /// Fim da interrupção: retoma só se foi esta camada que pausou e o SO indica retomação.
+  Future<void> _onAudioInterruptionEnded(AudioInterruptionType type) async {
+    if (!_pausedForAudioInterruption) return;
+    switch (type) {
+      case AudioInterruptionType.pause:
+      case AudioInterruptionType.duck:
+        _pausedForAudioInterruption = false;
+        if (_isOffline) return;
+        if (state.errorMessage != null) return;
+        try {
+          await _player.play();
+        } catch (e, stack) {
+          if (kDebugMode) {
+            debugPrint('_onAudioInterruptionEnded play: $e\n$stack');
+          }
+        }
+        break;
+      case AudioInterruptionType.unknown:
+        _pausedForAudioInterruption = false;
+        break;
+    }
+  }
+
+  static UiPlaybackLifecycle _uiLifecycleFromPlayer(PlayerState playerState) {
+    final ps = playerState.processingState;
+    final playing = playerState.playing;
+    switch (ps) {
+      case ProcessingState.idle:
+        return UiPlaybackLifecycle.idle;
+      case ProcessingState.loading:
+        return UiPlaybackLifecycle.preparing;
+      case ProcessingState.buffering:
+        return UiPlaybackLifecycle.buffering;
+      case ProcessingState.ready:
+        return playing
+            ? UiPlaybackLifecycle.playing
+            : UiPlaybackLifecycle.paused;
+      case ProcessingState.completed:
+        return UiPlaybackLifecycle.idle;
+    }
+  }
+
+  /// Sincroniza [UiPlaybackLifecycle] com [AudioPlayer] (fonte de verdade em reprodução).
   void _onPlayerState(PlayerState playerState) {
     if (_deferPlayerIdle &&
         playerState.processingState == ProcessingState.idle) {
@@ -192,28 +317,8 @@ class RadioPlayerUiNotifier extends StateNotifier<RadioPlayerUiState> {
     if (playerState.processingState != ProcessingState.idle) {
       _deferPlayerIdle = false;
     }
-    final ps = playerState.processingState;
-    final playing = playerState.playing;
 
-    final UiPlaybackLifecycle nextLifecycle;
-    switch (ps) {
-      case ProcessingState.idle:
-        nextLifecycle = UiPlaybackLifecycle.idle;
-        break;
-      case ProcessingState.loading:
-        nextLifecycle = UiPlaybackLifecycle.preparing;
-        break;
-      case ProcessingState.buffering:
-        nextLifecycle = UiPlaybackLifecycle.buffering;
-        break;
-      case ProcessingState.ready:
-        nextLifecycle =
-            playing ? UiPlaybackLifecycle.playing : UiPlaybackLifecycle.paused;
-        break;
-      case ProcessingState.completed:
-        nextLifecycle = UiPlaybackLifecycle.idle;
-        break;
-    }
+    final nextLifecycle = _uiLifecycleFromPlayer(playerState);
 
     if (nextLifecycle != state.lifecycle) {
       state = state.copyWith(lifecycle: nextLifecycle);
@@ -326,33 +431,23 @@ class RadioPlayerUiNotifier extends StateNotifier<RadioPlayerUiState> {
     _emit(state.copyWith(errorMessage: null));
   }
 
-  /// Transição **online → offline**: para de consumir rede e bateria de forma
-  /// previsível. Não reutiliza [transportTap] (evita misturar com dismiss de erro).
+  /// Transição **online → offline** (ex.: Wi‑Fi cai e não há fallback de dados).
+  /// Não reutiliza [transportTap] (evita misturar com dismiss de erro).
   ///
-  /// - A tocar: [pause] (o utilizador retoma quando quiser, com rede).
-  /// - A preparar / em buffer: [stop] → [idle] (não deixa loading preso offline).
-  /// - [idle] / [paused]: sem efeito.
+  /// - **A tocar:** [pause] e em seguida alinha [lifecycle] ao [AudioPlayer]
+  ///   (normalmente [paused]; se o fluxo já tiver morrido, [idle]) — evita o contador
+  ///   e o chip «a tocar» a ficarem activos até ao próximo evento do stream.
+  /// - **Load activo:** [_cancelActiveTransportLoad].
+  /// - **[idle] / [paused]:** sem efeito.
   Future<void> pauseDueToNetworkLoss() async {
+    _pausedForAudioInterruption = false;
     switch (state.lifecycle) {
       case UiPlaybackLifecycle.idle:
       case UiPlaybackLifecycle.paused:
         return;
       case UiPlaybackLifecycle.preparing:
       case UiPlaybackLifecycle.buffering:
-        _deferPlayerIdle = false;
-        try {
-          await _player.stop();
-        } catch (e, stack) {
-          if (kDebugMode) {
-            debugPrint('pauseDueToNetworkLoss stop: $e\n$stack');
-          }
-        }
-        _emit(
-          _ecouteLivePresentation(state).copyWith(
-            lifecycle: UiPlaybackLifecycle.idle,
-            errorMessage: null,
-          ),
-        );
+        await _cancelActiveTransportLoad();
         return;
       case UiPlaybackLifecycle.playing:
         try {
@@ -360,7 +455,11 @@ class RadioPlayerUiNotifier extends StateNotifier<RadioPlayerUiState> {
         } catch (e, stack) {
           if (kDebugMode) debugPrint('pauseDueToNetworkLoss pause: $e\n$stack');
         }
-        _emit(_ecouteLivePresentation(state));
+        _emit(
+          _ecouteLivePresentation(state).copyWith(
+            lifecycle: _uiLifecycleFromPlayer(_player.playerState),
+          ),
+        );
         return;
     }
   }
@@ -410,21 +509,11 @@ class RadioPlayerUiNotifier extends StateNotifier<RadioPlayerUiState> {
     switch (state.lifecycle) {
       case UiPlaybackLifecycle.preparing:
       case UiPlaybackLifecycle.buffering:
-        _deferPlayerIdle = false;
-        try {
-          await _player.stop();
-        } catch (e, stack) {
-          if (kDebugMode) debugPrint('stop during buffer: $e\n$stack');
-        }
-        _emit(
-          _ecouteLivePresentation(state).copyWith(
-            lifecycle: UiPlaybackLifecycle.idle,
-            errorMessage: null,
-          ),
-        );
+        await _cancelActiveTransportLoad();
         return;
 
       case UiPlaybackLifecycle.playing:
+        _pausedForAudioInterruption = false;
         try {
           await _player.pause();
         } catch (e, stack) {
@@ -434,6 +523,7 @@ class RadioPlayerUiNotifier extends StateNotifier<RadioPlayerUiState> {
         return;
 
       case UiPlaybackLifecycle.paused:
+        _pausedForAudioInterruption = false;
         try {
           await _player.play();
         } catch (e, stack) {
@@ -464,7 +554,7 @@ class RadioPlayerUiNotifier extends StateNotifier<RadioPlayerUiState> {
           _deferPlayerIdle = false;
           _sourceLoaded = false;
           _emit(
-            state.copyWith(
+            _ecouteLivePresentation(state).copyWith(
               lifecycle: UiPlaybackLifecycle.idle,
               errorMessage: _loadErrorMessage(e),
             ),
@@ -502,14 +592,12 @@ class RadioPlayerUiNotifier extends StateNotifier<RadioPlayerUiState> {
       if (kDebugMode) {
         debugPrint('reloadLiveStreamToCurrentEdge: $e\n$stack');
       }
+      _pausedForAudioInterruption = false;
       _deferPlayerIdle = false;
       _sourceLoaded = false;
       _emit(
-        state.copyWith(
+        _ecouteLivePresentation(state).copyWith(
           lifecycle: UiPlaybackLifecycle.idle,
-          isLiveMode: false,
-          livePulseActive: false,
-          liveSyncEligible: true,
           errorMessage: _loadErrorMessage(e),
         ),
       );
@@ -530,6 +618,7 @@ class RadioPlayerUiNotifier extends StateNotifier<RadioPlayerUiState> {
     try {
       await _player.stop();
     } catch (_) {}
+    _pausedForAudioInterruption = false;
     _deferPlayerIdle = false;
     _sourceLoaded = false;
     _emit(

@@ -13,6 +13,7 @@ class PlayButton extends StatefulWidget {
     this.size = 96,
     this.enabled = true,
     this.isOffline = false,
+    this.onOfflineRestartApp,
     this.layoutScale,
   });
 
@@ -30,6 +31,9 @@ class PlayButton extends StatefulWidget {
   /// Sem rede e sem leitura activa: explica tooltip / acessibilidade.
   final bool isOffline;
 
+  /// Quando não-null e sem reprodução/carregamento: ícone [Icons.refresh_rounded] e reinício da app (pai decide: offline, erro, etc.).
+  final VoidCallback? onOfflineRestartApp;
+
   /// Escala mobile-first para sombra (8pt); opcional.
   final double? layoutScale;
 
@@ -42,10 +46,14 @@ class _PlayButtonState extends State<PlayButton> {
   Widget build(BuildContext context) {
     final brightness = Theme.of(context).brightness;
     final isDark = brightness == Brightness.dark;
-    // Variante rounded: cantos do play/pause mais suaves.
-    final iconData =
-        widget.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded;
     final ls = widget.layoutScale ?? 1.0;
+    final restartMode = !widget.isPlaying &&
+        !widget.isLoading &&
+        widget.onOfflineRestartApp != null;
+    // Reinício: só quando o pai passa callback (offline e/ou erro de fluxo).
+    final IconData iconData = restartMode
+        ? Icons.refresh_rounded
+        : (widget.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded);
     final buttonSize = widget.size.clamp(
       AppSpacing.g(AppSpacing.playControlDiameterMinSteps, ls),
       AppSpacing.g(AppSpacing.playControlDiameterMaxSteps, ls),
@@ -62,11 +70,18 @@ class _PlayButtonState extends State<PlayButton> {
     final fillColor = AppTheme.transportPlayFill(brightness);
     final iconColor = AppTheme.transportPlayIcon(brightness);
 
-    final canTap = widget.enabled && widget.onTap != null;
+    final canTap = restartMode ||
+        (widget.enabled && widget.onTap != null);
+    final effectiveOpacity = restartMode || widget.enabled ? 1.0 : 0.45;
 
     final String a11yLabel;
     final String tooltipMsg;
-    if (widget.isOffline && !widget.isPlaying && !widget.isLoading) {
+    if (restartMode) {
+      a11yLabel = 'Reiniciar a aplicação';
+      tooltipMsg = widget.isOffline
+          ? 'Reiniciar a app (sem rede)'
+          : 'Reiniciar a app (erro no fluxo)';
+    } else if (widget.isOffline && !widget.isPlaying && !widget.isLoading) {
       a11yLabel = 'Lecture indisponible sans connexion réseau';
       tooltipMsg = 'Sem ligação à Internet';
     } else if (widget.isLoading) {
@@ -100,11 +115,18 @@ class _PlayButtonState extends State<PlayButton> {
           splashColor: isDark
               ? Colors.black.withValues(alpha: 0.1)
               : Colors.white.withValues(alpha: 0.18),
-          // Mantém o toque em buffering: o loading é só visual no botão.
-          onTap: canTap ? widget.onTap : null,
+          onTap: canTap
+              ? () {
+                  if (restartMode) {
+                    widget.onOfflineRestartApp?.call();
+                  } else {
+                    widget.onTap?.call();
+                  }
+                }
+              : null,
           child: AnimatedOpacity(
             duration: const Duration(milliseconds: 180),
-            opacity: widget.enabled ? 1 : 0.45,
+            opacity: effectiveOpacity,
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 220),
               curve: Curves.easeOutCubic,

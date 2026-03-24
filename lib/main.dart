@@ -28,6 +28,9 @@ Future<void> main() async {
 
 /// Sessão de áudio + notificação em segundo plano. Falhas não bloqueiam [runApp].
 ///
+/// **Interrupções (chamada, etc.):** [AudioSessionConfiguration.music] + foco Android;
+/// [RadioPlayerUiNotifier] escuta [AudioSession.interruptionEventStream] para pausar/retomar a UI.
+///
 /// **Android (2024–2026):** o serviço usa `foregroundServiceType="mediaPlayback"` no manifest;
 /// em API 33+, [ensureAndroidPostNotificationsPermission] pede `POST_NOTIFICATIONS` após o 1.º frame.
 Future<void> _bootstrapAudio() async {
