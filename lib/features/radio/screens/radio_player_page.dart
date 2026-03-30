@@ -1,19 +1,23 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:meu_app/core/network/network_connectivity_provider.dart';
+import 'package:meu_app/core/strings/bible_fm_strings.dart';
 import 'package:meu_app/core/platform/android_post_notifications.dart';
 import 'package:meu_app/core/theme/app_spacing.dart';
 import 'package:meu_app/core/theme/app_theme.dart';
+import 'package:meu_app/features/radio/widgets/broadcast_signal_icon.dart';
 import 'package:meu_app/features/radio/providers/radio_player_ui_provider.dart';
+import 'package:meu_app/features/radio/radio_stream_config.dart';
 import 'package:meu_app/features/radio/screens/player_ui_models.dart';
 import 'package:meu_app/features/radio/widgets/live_pulsing_indicator.dart';
 import 'package:meu_app/features/radio/widgets/radio_transport_controls.dart';
-import 'package:meu_app/features/radio/widgets/voice_bars_visualizer.dart';
+import 'package:meu_app/features/radio/widgets/web_native_audio.dart';
 
 /// Bible FM: layout **mobile-first** — base para telemóvel, depois tablet/paisagem.
 /// Estrutura alinhada às orientações de **margens, contenção e encartes** do
@@ -37,17 +41,69 @@ class _RadioPlayerPageState extends ConsumerState<RadioPlayerPage> {
   /// [checkConnectivity] falhou por completo: espera o primeiro estado não-[unknown] no stream.
   bool _pendingAutostartAfterUnknownLink = false;
 
+  ProviderSubscription<RadioNetworkLink>? _networkLinkSub;
+
   @override
   void initState() {
     super.initState();
+    if (!kIsWeb) {
+      _networkLinkSub = ref.listenManual<RadioNetworkLink>(
+        networkLinkProvider,
+        _onNetworkLinkChanged,
+      );
+    }
+    if (kIsWeb) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       unawaited(_postFrameBootstrap());
     });
   }
 
+  @override
+  void dispose() {
+    _networkLinkSub?.close();
+    super.dispose();
+  }
+
+  void _onNetworkLinkChanged(
+    RadioNetworkLink? previous,
+    RadioNetworkLink next,
+  ) {
+    if (!kIsWeb &&
+        _pendingAutostartAfterUnknownLink &&
+        previous == RadioNetworkLink.unknown &&
+        next != RadioNetworkLink.unknown) {
+      _pendingAutostartAfterUnknownLink = false;
+      final radio = ref.read(radioPlayerUiProvider.notifier);
+      if (next == RadioNetworkLink.offline) {
+        _deferAutostartUntilOnline = true;
+      } else {
+        unawaited(radio.autoStartLivePlayback());
+      }
+    }
+
+    final wasOffline = previous == RadioNetworkLink.offline;
+    final onlineNow = next != RadioNetworkLink.offline;
+    if (wasOffline && onlineNow) {
+      final radio = ref.read(radioPlayerUiProvider.notifier);
+      radio.onConnectivityRestored();
+      if (!kIsWeb && _deferAutostartUntilOnline) {
+        _deferAutostartUntilOnline = false;
+        unawaited(radio.autoStartLivePlayback());
+      }
+    }
+    if (next == RadioNetworkLink.wifi &&
+        previous != null &&
+        previous != RadioNetworkLink.wifi &&
+        previous != RadioNetworkLink.unknown) {
+      HapticFeedback.selectionClick();
+    }
+  }
+
   /// Permissão de notificação antes do autostart, com pequeno espaçamento para o diálogo do SO.
+  /// Web: sem autostart nem permissões — utilizador usa play ou actualizar.
   Future<void> _postFrameBootstrap() async {
+    if (kIsWeb) return;
     await ensureAndroidPostNotificationsPermission();
     if (!mounted) return;
     await Future<void>.delayed(const Duration(milliseconds: 350));
@@ -89,9 +145,7 @@ class _RadioPlayerPageState extends ConsumerState<RadioPlayerPage> {
       if (!mounted) return;
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
         const SnackBar(
-          content: Text(
-            'Sem ligação. Verifique o Wi‑Fi ou os dados móveis.',
-          ),
+          content: Text('Sem ligação. Verifique o Wi‑Fi ou os dados móveis.'),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -102,56 +156,139 @@ class _RadioPlayerPageState extends ConsumerState<RadioPlayerPage> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<RadioNetworkLink>(networkLinkProvider, (previous, next) {
-      if (_pendingAutostartAfterUnknownLink &&
-          previous == RadioNetworkLink.unknown &&
-          next != RadioNetworkLink.unknown) {
-        _pendingAutostartAfterUnknownLink = false;
-        final radio = ref.read(radioPlayerUiProvider.notifier);
-        if (next == RadioNetworkLink.offline) {
-          _deferAutostartUntilOnline = true;
-        } else {
-          unawaited(radio.autoStartLivePlayback());
-        }
-      }
+    if (kIsWeb) {
+      final scheme = Theme.of(context).colorScheme;
+      final brightness = Theme.of(context).brightness;
+      const webCapsuleH = 52.0;
+      const webPadH = 8.0;
+      const webPadV = 5.0;
+      const webLiveDiameter = 42.0;
+      const webAudioH = 40.0;
+      final innerH = webCapsuleH - 2 * webPadV;
+      return Semantics(
+        container: true,
+        label: kBibleFmSemanticsPlayerPage,
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          body: Stack(
+            fit: StackFit.expand,
+            children: [
+              const _PageBackground(),
+              SafeArea(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 560),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            kBibleFmNotificationTitle,
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.headlineSmall
+                                ?.copyWith(
+                                  color: scheme.onSurface,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
+                          const SizedBox(height: 16),
+                          DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: AppTheme.transportCapsuleTrack(brightness),
+                              borderRadius: BorderRadius.circular(
+                                webCapsuleH / 2,
+                              ),
+                              border: Border.all(
+                                color: AppTheme.transportLiveBorder(brightness)
+                                    .withValues(
+                                      alpha: brightness == Brightness.dark
+                                          ? 0.35
+                                          : 0.5,
+                                    ),
+                                width: 1,
+                              ),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(
+                                webPadH,
+                                webPadV,
+                                webPadH,
+                                webPadV,
+                              ),
+                              child: SizedBox(
+                                height: innerH,
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    ValueListenableBuilder<bool>(
+                                      valueListenable: bibleFmWebPlaybackActive,
+                                      builder: (context, playing, _) {
+                                        return Opacity(
+                                          opacity: playing ? 1.0 : 0.45,
+                                          child: _WebLiveStreamButton(
+                                            diameter: webLiveDiameter,
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: WebNativeAudioControls(
+                                        streamUrl: kBibleFmLiveStreamUrl,
+                                        controlsHeight: webAudioH,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
-      final wasOffline = previous == RadioNetworkLink.offline;
-      final onlineNow = next != RadioNetworkLink.offline;
-      if (wasOffline && onlineNow) {
-        final radio = ref.read(radioPlayerUiProvider.notifier);
-        radio.onConnectivityRestored();
-        if (_deferAutostartUntilOnline) {
-          _deferAutostartUntilOnline = false;
-          unawaited(radio.autoStartLivePlayback());
-        }
-      }
-      if (next == RadioNetworkLink.wifi &&
-          previous != null &&
-          previous != RadioNetworkLink.wifi &&
-          previous != RadioNetworkLink.unknown) {
-        HapticFeedback.selectionClick();
-      }
-    });
-
-    final ui = ref.watch(radioPlayerUiProvider);
+    final pageUi = ref.watch(
+      radioPlayerUiProvider.select(
+        (s) => (
+          lifecycle: s.lifecycle,
+          isLiveMode: s.isLiveMode,
+          livePulseActive: s.livePulseActive,
+          errorMessage: s.errorMessage,
+        ),
+      ),
+    );
     final player = ref.read(radioPlayerUiProvider.notifier);
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cardColor = scheme.surfaceContainerHighest;
-    final timerTrayColor = scheme.surfaceContainerLow;
     final titleColor = scheme.onSurface;
-    final timerColor = scheme.onSurface;
 
-    final networkLink = ref.watch(networkLinkProvider);
-    final isOffline = networkLink.isOffline;
+    final isOffline = ref.watch(networkOfflineProvider);
+
     /// Offline ou qualquer erro: modo refresh (botão e mensagens) em qualquer fase do transporte.
-    final needsRecoveryRefresh = isOffline || ui.errorMessage != null;
-    final showStreamLoading = isTransportLoadingUiLifecycle(ui.lifecycle) &&
+    final needsRecoveryRefresh = isOffline || pageUi.errorMessage != null;
+    final showStreamLoading =
+        isTransportLoadingUiLifecycle(pageUi.lifecycle) &&
         !needsRecoveryRefresh;
+
+    final isPlaying = pageUi.lifecycle == UiPlaybackLifecycle.playing;
+    final isEnDirect = radioUiIsEnDirect(pageUi.lifecycle, pageUi.isLiveMode);
+    final canTapLive = radioUiCanTapLive(pageUi.lifecycle, pageUi.isLiveMode);
+    final isTransportLoading = isTransportLoadingUiLifecycle(pageUi.lifecycle);
 
     return Semantics(
       container: true,
-      label: 'Bible FM, lecteur radio',
+      label: kBibleFmSemanticsPlayerPage,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: Stack(
@@ -162,236 +299,307 @@ class _RadioPlayerPageState extends ConsumerState<RadioPlayerPage> {
               child: RepaintBoundary(
                 child: LayoutBuilder(
                   builder: (context, constraints) {
-                  final w = constraints.maxWidth;
-                  final h = constraints.maxHeight;
-                  // Mobile-first: base mobile, depois overrides para tablet/landscape.
-                  final isCompact = AppLayoutBreakpoints.isCompactHeight(h);
-                  final isNarrow = AppLayoutBreakpoints.isNarrow(w);
+                    final w = constraints.maxWidth;
+                    final h = constraints.maxHeight;
+                    // Mobile-first: base mobile, depois overrides para tablet/landscape.
+                    final isCompact = AppLayoutBreakpoints.isCompactHeight(h);
+                    final isNarrow = AppLayoutBreakpoints.isNarrow(w);
 
-                  final scale = AppSpacing.mobileLayoutScale(
-                    constraints.biggest.shortestSide,
-                  );
-                  final sidePadding = AppSpacing.g(
-                    AppSpacing.marginContentHorizontalSteps(narrow: isNarrow),
-                    scale,
-                  );
-                  final transportSidePadding = AppSpacing.g(
-                    AppSpacing.marginTransportHorizontalSteps(narrow: isNarrow),
-                    scale,
-                  );
-                  final panelPaddingH = AppSpacing.g(
-                    AppSpacing.marginPanelInnerHorizontalSteps(
-                      narrow: isNarrow,
-                    ),
-                    scale,
-                  );
-                  final panelWidth = AppLayoutBreakpoints.maxPanelWidth(
-                    w,
-                    h,
-                    scale,
-                  );
-                  final isPhonePortrait =
-                      !AppLayoutBreakpoints.isTablet(w) &&
-                      !AppLayoutBreakpoints.isLandscape(w, h);
-                  final cardWidthFraction = isPhonePortrait ? 0.96 : 1.0;
+                    final scale = AppSpacing.mobileLayoutScale(
+                      constraints.biggest.shortestSide,
+                    );
+                    final sidePadding = AppSpacing.g(
+                      AppSpacing.marginContentHorizontalSteps(narrow: isNarrow),
+                      scale,
+                    );
+                    final transportSidePadding = AppSpacing.g(
+                      AppSpacing.marginTransportHorizontalSteps(
+                        narrow: isNarrow,
+                      ),
+                      scale,
+                    );
+                    final panelPaddingH = AppSpacing.g(
+                      AppSpacing.marginPanelInnerHorizontalSteps(
+                        narrow: isNarrow,
+                      ),
+                      scale,
+                    );
+                    final panelWidth = AppLayoutBreakpoints.maxPanelWidth(
+                      w,
+                      h,
+                      scale,
+                    );
+                    final isPhonePortrait =
+                        !AppLayoutBreakpoints.isTablet(w) &&
+                        !AppLayoutBreakpoints.isLandscape(w, h);
+                    final cardWidthFraction = isPhonePortrait ? 0.96 : 1.0;
 
-                  final playButtonSize = AppSpacing.g(
-                    AppSpacing.playControlDiameterSteps(
-                      layoutWidth: w,
-                      layoutHeight: h,
-                    ),
-                    scale,
-                  );
-                  final bottomInset = MediaQuery.paddingOf(context).bottom;
-                  final playVisualSize = playButtonSize.clamp(
-                    AppSpacing.g(AppSpacing.playControlDiameterMinSteps, scale),
-                    AppSpacing.g(AppSpacing.playControlDiameterMaxSteps, scale),
-                  );
-                  final postButtonGap = AppSpacing.g(
-                    AppSpacing.transportStackGapSteps(compactHeight: isCompact),
-                    scale,
-                  );
-                  final overlayContentHeight = playVisualSize + postButtonGap;
-                  final barReserve =
-                      overlayContentHeight +
-                      bottomInset +
+                    final playButtonSize = AppSpacing.g(
+                      AppSpacing.playControlDiameterSteps(
+                        layoutWidth: w,
+                        layoutHeight: h,
+                      ),
+                      scale,
+                    );
+                    final bottomInset = MediaQuery.paddingOf(context).bottom;
+                    final playVisualSize = playButtonSize.clamp(
                       AppSpacing.g(
-                        AppSpacing.transportBottomMarginSteps,
+                        AppSpacing.playControlDiameterMinSteps,
                         scale,
-                      );
+                      ),
+                      AppSpacing.g(
+                        AppSpacing.playControlDiameterMaxSteps,
+                        scale,
+                      ),
+                    );
+                    final scrollBottomPadding =
+                        bottomInset +
+                        AppSpacing.g(
+                          AppSpacing.transportBottomMarginSteps,
+                          scale,
+                        );
 
-                  return Stack(
-                    clipBehavior: Clip.none,
-                    fit: StackFit.expand,
-                    children: [
-                      if (showStreamLoading)
-                        Positioned(
-                          top: 0,
-                          left: 0,
-                          right: 0,
-                          child: IgnorePointer(
-                            child: LinearProgressIndicator(
-                              minHeight: 3,
-                              color: scheme.primary,
-                              backgroundColor: scheme.surfaceContainerHighest
-                                  .withValues(alpha: 0.35),
-                            ),
+                    return Stack(
+                      clipBehavior: Clip.none,
+                      fit: StackFit.expand,
+                      children: [
+                        if (showStreamLoading)
+                          Positioned(
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            child: _StreamLoadingStrip(colorScheme: scheme),
                           ),
-                        ),
-                      Positioned.fill(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Expanded(
-                              child: Padding(
-                                padding: EdgeInsets.only(bottom: barReserve),
+                        Positioned.fill(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Expanded(
                                 child: Padding(
-                                  padding: EdgeInsets.symmetric(
-                                    horizontal: sidePadding,
-                                    vertical: AppSpacing.g(
-                                      AppSpacing.sectionVerticalPaddingSteps,
-                                      scale,
-                                    ),
+                                  padding: EdgeInsets.only(
+                                    bottom: scrollBottomPadding,
                                   ),
-                                  child: LayoutBuilder(
-                                    builder: (context, innerConstraints) {
-                                      final cardDisplayWidth =
-                                          AppSpacing.clampCardContentWidth(
-                                        contentWidth:
-                                            innerConstraints.maxWidth,
-                                        panelCap: panelWidth,
-                                        contentWidthFraction:
-                                            cardWidthFraction,
-                                      );
-                                      return SingleChildScrollView(
-                                        clipBehavior: Clip.none,
-                                        physics: const ClampingScrollPhysics(),
-                                        child: ConstrainedBox(
-                                          constraints: BoxConstraints(
-                                            minHeight:
-                                                innerConstraints.maxHeight,
-                                          ),
-                                          child: Center(
-                                            child: Column(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment.center,
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                // Cartão «sem rede» só se o topo ainda não mostra erro.
-                                                if (isOffline && ui.errorMessage == null) ...[
-                                                  SizedBox(
-                                                    width: cardDisplayWidth,
-                                                    child: _OfflineBanner(
-                                                        scale: scale),
-                                                  ),
-                                                  SizedBox(
-                                                    height: AppSpacing.g(
-                                                      3,
-                                                      scale,
-                                                    ),
-                                                  ),
-                                                ],
-                                                if (ui.errorMessage != null) ...[
-                                                  SizedBox(
-                                                    width: cardDisplayWidth,
-                                                    child:
-                                                        _ErrorBanner(scale: scale),
-                                                  ),
-                                                  SizedBox(
-                                                    height: AppSpacing.g(2, scale),
-                                                  ),
-                                                ],
-                                                _MainPlayerCard(
-                                                  width: cardDisplayWidth,
-                                                  panelPaddingH: panelPaddingH,
-                                                  cardColor: cardColor,
-                                                  isDark: isDark,
-                                                  scale: scale,
-                                                  isCompactHeight: isCompact,
-                                                  narrowMobile: isNarrow,
-                                                  isOffline: isOffline,
-                                                  hasRecoverableError:
-                                                      ui.errorMessage != null,
-                                                  isPlaying: ui.isPlaying,
-                                                  isBuffering:
-                                                      isTransportLoadingUiLifecycle(
-                                                        ui.lifecycle,
+                                  child: Padding(
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: sidePadding,
+                                      vertical: AppSpacing.g(
+                                        AppSpacing.sectionVerticalPaddingSteps,
+                                        scale,
+                                      ),
+                                    ),
+                                    child: LayoutBuilder(
+                                      builder: (context, innerConstraints) {
+                                        final cardDisplayWidth =
+                                            AppSpacing.clampCardContentWidth(
+                                              contentWidth:
+                                                  innerConstraints.maxWidth,
+                                              panelCap: panelWidth,
+                                              contentWidthFraction:
+                                                  cardWidthFraction,
+                                            );
+                                        return SingleChildScrollView(
+                                          clipBehavior: Clip.none,
+                                          physics:
+                                              const ClampingScrollPhysics(),
+                                          child: ConstrainedBox(
+                                            constraints: BoxConstraints(
+                                              minHeight:
+                                                  innerConstraints.maxHeight,
+                                            ),
+                                            child: Center(
+                                              child: Column(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.center,
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  // Cartão «sem rede» só se o topo ainda não mostra erro.
+                                                  if (isOffline &&
+                                                      pageUi.errorMessage ==
+                                                          null) ...[
+                                                    SizedBox(
+                                                      width: cardDisplayWidth,
+                                                      child: _OfflineBanner(
+                                                        scale: scale,
                                                       ),
-                                                  isLiveMode: ui.isLiveMode,
-                                                  isEnDirect: ui.isEnDirect,
-                                                  livePulseActive:
-                                                      ui.livePulseActive &&
-                                                      ui.isEnDirect,
-                                                  onLiveIndicatorTap: isOffline
-                                                      ? null
-                                                      : ui.isEnDirect
+                                                    ),
+                                                    SizedBox(
+                                                      height: AppSpacing.g(
+                                                        3,
+                                                        scale,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                  if (pageUi.errorMessage !=
+                                                      null) ...[
+                                                    SizedBox(
+                                                      width: cardDisplayWidth,
+                                                      child: _ErrorBanner(
+                                                        scale: scale,
+                                                      ),
+                                                    ),
+                                                    SizedBox(
+                                                      height: AppSpacing.g(
+                                                        2,
+                                                        scale,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                  if (!kIsWeb)
+                                                    _MainPlayerCard(
+                                                      width: cardDisplayWidth,
+                                                      panelPaddingH:
+                                                          panelPaddingH,
+                                                      cardColor: cardColor,
+                                                      isDark: isDark,
+                                                      scale: scale,
+                                                      isCompactHeight:
+                                                          isCompact,
+                                                      narrowMobile: isNarrow,
+                                                      isOffline: isOffline,
+                                                      hasRecoverableError:
+                                                          pageUi.errorMessage !=
+                                                          null,
+                                                      isPlaying: isPlaying,
+                                                      isBuffering:
+                                                          isTransportLoading,
+                                                      isLiveMode:
+                                                          pageUi.isLiveMode,
+                                                      isEnDirect: isEnDirect,
+                                                      livePulseActive:
+                                                          pageUi
+                                                              .livePulseActive &&
+                                                          isEnDirect,
+                                                      onLiveIndicatorTap:
+                                                          isOffline
+                                                          ? null
+                                                          : isEnDirect
                                                           ? player
-                                                              .toggleLivePulse
-                                                          : (ui.canTapLive
+                                                                .toggleLivePulse
+                                                          : (canTapLive
                                                                 ? player.liveTap
                                                                 : null),
-                                                  timerTrayColor:
-                                                      timerTrayColor,
-                                                  titleColor: titleColor,
-                                                  timerColor: timerColor,
-                                                ),
-                                              ],
+                                                      titleColor: titleColor,
+                                                    ),
+                                                ],
+                                              ),
                                             ),
                                           ),
-                                        ),
-                                      );
-                                    },
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Positioned.fill(
+                          child: Align(
+                            alignment: Alignment.center,
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: transportSidePadding,
+                              ),
+                              child: Material(
+                                color: Colors.transparent,
+                                child: RepaintBoundary(
+                                  child: RadioTransportControls(
+                                    scale: scale,
+                                    playVisualSize: playVisualSize,
+                                    isOffline: isOffline,
+                                    playbackLifecycle: pageUi.lifecycle,
+                                    isPlaying: isPlaying,
+                                    isPaused:
+                                        pageUi.lifecycle ==
+                                        UiPlaybackLifecycle.paused,
+                                    isBuffering: isTransportLoading,
+                                    isPreparing:
+                                        pageUi.lifecycle ==
+                                        UiPlaybackLifecycle.preparing,
+                                    isLiveMode: pageUi.isLiveMode,
+                                    onTransportTap: () =>
+                                        unawaited(player.transportTap()),
+                                    onLiveTap: isOffline
+                                        ? null
+                                        : (canTapLive ? player.liveTap : null),
+                                    onOfflineRestartApp: needsRecoveryRefresh
+                                        ? () => unawaited(_onRefreshPressed())
+                                        : null,
+                                    recoveryUiActive: needsRecoveryRefresh,
+                                    refreshRestartsEntireApp: isOffline,
                                   ),
                                 ),
                               ),
                             ),
-                          ],
-                        ),
-                      ),
-                      Positioned(
-                        left: transportSidePadding,
-                        right: transportSidePadding,
-                        bottom:
-                            bottomInset +
-                            AppSpacing.g(
-                              AppSpacing.transportBottomMarginSteps,
-                              scale,
-                            ),
-                        child: Material(
-                          color: Colors.transparent,
-                          // Por último no Stack: toques na barra têm prioridade.
-                          child: RadioTransportControls(
-                            scale: scale,
-                            playVisualSize: playVisualSize,
-                            narrowMobile: isNarrow,
-                            isOffline: isOffline,
-                            playbackLifecycle: ui.lifecycle,
-                            isPlaying: ui.isPlaying,
-                            isPaused:
-                                ui.lifecycle == UiPlaybackLifecycle.paused,
-                            isBuffering: isTransportLoadingUiLifecycle(ui.lifecycle),
-                            isPreparing:
-                                ui.lifecycle == UiPlaybackLifecycle.preparing,
-                            isLiveMode: ui.isLiveMode,
-                            onTransportTap: () => unawaited(player.transportTap()),
-                            onLiveTap: isOffline
-                                ? null
-                                : (ui.canTapLive ? player.liveTap : null),
-                            onOfflineRestartApp: needsRecoveryRefresh
-                                ? () => unawaited(_onRefreshPressed())
-                                : null,
-                            recoveryUiActive: needsRecoveryRefresh,
-                            refreshRestartsEntireApp: isOffline,
                           ),
                         ),
-                      ),
-                    ],
-                  );
-                },
+                      ],
+                    );
+                  },
                 ),
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Faixa fina estática — sem ticker contínuo do [LinearProgressIndicator].
+class _StreamLoadingStrip extends StatelessWidget {
+  const _StreamLoadingStrip({required this.colorScheme});
+
+  final ColorScheme colorScheme;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: ColoredBox(
+        color: colorScheme.primary.withValues(alpha: 0.88),
+        child: const SizedBox(height: 3, width: double.infinity),
+      ),
+    );
+  }
+}
+
+/// Direto / religar fluxo — à esquerda da barra nativa (play integrado no `<audio>`).
+class _WebLiveStreamButton extends StatelessWidget {
+  const _WebLiveStreamButton({this.diameter = 44});
+
+  final double diameter;
+
+  @override
+  Widget build(BuildContext context) {
+    final brightness = Theme.of(context).brightness;
+    final iconSize = (diameter * 0.42).clamp(16.0, 24.0);
+    return Semantics(
+      button: true,
+      label: kBibleFmLiveA11yGoLive,
+      child: Tooltip(
+        message: kBibleFmLiveTooltipGoLive,
+        waitDuration: const Duration(milliseconds: 320),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () =>
+                unawaited(bibleFmWebReloadLiveStream(kBibleFmLiveStreamUrl)),
+            customBorder: const CircleBorder(),
+            child: Ink(
+              width: diameter,
+              height: diameter,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppTheme.transportPlayFill(brightness),
+              ),
+              child: Center(
+                child: BroadcastSignalIcon(
+                  color: AppTheme.transportPlayIcon(brightness),
+                  size: iconSize,
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -433,9 +641,7 @@ class _MainPlayerCard extends StatelessWidget {
     required this.isEnDirect,
     required this.livePulseActive,
     required this.onLiveIndicatorTap,
-    required this.timerTrayColor,
     required this.titleColor,
-    required this.timerColor,
   });
 
   final double width;
@@ -446,6 +652,7 @@ class _MainPlayerCard extends StatelessWidget {
   final bool isCompactHeight;
   final bool narrowMobile;
   final bool isOffline;
+
   /// Erro visível (banner / modo refresh): não mostrar «En pause» como se fosse pausa manual.
   final bool hasRecoverableError;
   final bool isPlaying;
@@ -454,20 +661,17 @@ class _MainPlayerCard extends StatelessWidget {
   final bool isEnDirect;
   final bool livePulseActive;
   final VoidCallback? onLiveIndicatorTap;
-  final Color timerTrayColor;
   final Color titleColor;
-  final Color timerColor;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final statusToTimerGap = AppSpacing.g(narrowMobile ? 2 : 3, scale);
-    final timerBodyWidth = math.max(0.0, width - 2 * panelPaddingH);
     const cornerPt = AppLayoutBreakpoints.playerCardCornerPt;
+
     final isListeningRow = isPlaying && !isBuffering;
-    final neutralPauseLiveDot = !hasRecoverableError &&
-        !(isOffline && !isBuffering) &&
-        !isListeningRow;
+    final neutralPauseLiveDot =
+        !hasRecoverableError && !(isOffline && !isBuffering) && !isListeningRow;
+
     return Container(
       width: width,
       padding: EdgeInsets.symmetric(
@@ -482,49 +686,33 @@ class _MainPlayerCard extends StatelessWidget {
           width: 1,
         ),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: EdgeInsets.only(right: AppSpacing.gHalf(scale)),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                _PlaybackStatusChip(
-                  isOffline: isOffline,
-                  hasRecoverableError: hasRecoverableError,
-                  isPlaying: isPlaying,
-                  isBuffering: isBuffering,
-                  isLiveMode: isLiveMode,
-                  scale: scale,
-                  narrowMobile: narrowMobile,
-                  labelColor: titleColor,
-                  isDark: isDark,
-                ),
-                LivePulsingIndicator(
-                  scale: scale,
-                  isEnDirect: isEnDirect,
-                  isPlaying: hasRecoverableError ? false : isPlaying,
-                  pulseEnabled: livePulseActive,
-                  neutralPause: neutralPauseLiveDot,
-                  onTap: onLiveIndicatorTap,
-                ),
-              ],
+      child: Padding(
+        padding: EdgeInsets.only(right: AppSpacing.gHalf(scale)),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            _PlaybackStatusChip(
+              isOffline: isOffline,
+              hasRecoverableError: hasRecoverableError,
+              isPlaying: isPlaying,
+              isBuffering: isBuffering,
+              isLiveMode: isLiveMode,
+              scale: scale,
+              narrowMobile: narrowMobile,
+              labelColor: titleColor,
+              isDark: isDark,
             ),
-          ),
-          SizedBox(height: statusToTimerGap),
-          VoiceBarsVisualizer(
-            isActive:
-                !hasRecoverableError && isPlaying && !isBuffering,
-            scale: scale,
-            barColor: timerColor,
-            trayColor: timerTrayColor,
-            layoutWidth: timerBodyWidth,
-            narrowMobile: narrowMobile,
-          ),
-        ],
+            LivePulsingIndicator(
+              scale: scale,
+              isEnDirect: isEnDirect,
+              isPlaying: hasRecoverableError ? false : isPlaying,
+              pulseEnabled: livePulseActive,
+              neutralPause: neutralPauseLiveDot,
+              onTap: onLiveIndicatorTap,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -557,8 +745,10 @@ class _OfflineBanner extends StatelessWidget {
             color: scheme.surfaceContainerHighest.withValues(
               alpha: isDark ? 0.42 : 0.72,
             ),
-            borderRadius:
-                AppRadii.borderRadius(AppTheme.notionBlockRadius, scale),
+            borderRadius: AppRadii.borderRadius(
+              AppTheme.notionBlockRadius,
+              scale,
+            ),
             border: Border.all(
               color: scheme.outline.withValues(alpha: isDark ? 0.48 : 0.62),
               width: 1,
@@ -617,7 +807,7 @@ class _ErrorBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    const visible = 'Vérifiez la connexion ou réessayez.';
+    const visible = kBibleFmErrorBannerHint;
 
     return Semantics(
       container: true,
@@ -700,16 +890,16 @@ class _PlaybackStatusChip extends StatelessWidget {
     final effectiveListening = isListening && !hasRecoverableError;
     final String label;
     if (isOffline && !isBuffering) {
-      label = 'Hors ligne';
+      label = kBibleFmStatusChipOffline;
     } else if (hasRecoverableError) {
-      label = 'Erreur';
+      label = kBibleFmStatusChipError;
     } else if (isListening) {
-      label = isLiveMode ? 'En direct' : 'En écoute';
+      label = isLiveMode ? kBibleFmStatusChipLive : kBibleFmStatusChipListening;
     } else {
-      label = 'En pause';
+      label = kBibleFmStatusChipPaused;
     }
 
-    final neutralPauseChip = label == 'En pause';
+    final neutralPauseChip = label == kBibleFmStatusChipPaused;
 
     final pillBg = AppTheme.statusPillBackground(
       scheme: scheme,
@@ -729,12 +919,8 @@ class _PlaybackStatusChip extends StatelessWidget {
     final labelPaint = effectiveListening
         ? labelColor.withValues(alpha: isDark ? 0.92 : 1)
         : neutralPauseChip
-            ? scheme.onSurfaceVariant.withValues(alpha: isDark ? 0.92 : 0.88)
-            : Color.lerp(
-                labelColor,
-                scheme.error,
-                isDark ? 0.42 : 0.48,
-              )!;
+        ? scheme.onSurfaceVariant.withValues(alpha: isDark ? 0.92 : 0.88)
+        : Color.lerp(labelColor, scheme.error, isDark ? 0.42 : 0.48)!;
 
     final minH = math.max(AppSpacing.minTouchTarget, AppSpacing.g(6, scale));
     return ConstrainedBox(
@@ -749,10 +935,7 @@ class _PlaybackStatusChip extends StatelessWidget {
         decoration: BoxDecoration(
           color: pillBg,
           borderRadius: AppRadii.borderRadius(AppRadii.pill, scale),
-          border: Border.all(
-            color: pillBorder,
-            width: 1,
-          ),
+          border: Border.all(color: pillBorder, width: 1),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -773,3 +956,4 @@ class _PlaybackStatusChip extends StatelessWidget {
     );
   }
 }
+

@@ -1,4 +1,5 @@
 import 'package:audio_session/audio_session.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
@@ -7,6 +8,7 @@ import 'package:just_audio_background/just_audio_background.dart';
 import 'package:meu_app/app/app.dart';
 import 'package:meu_app/app/opening_splash_gate.dart';
 import 'package:meu_app/core/theme/app_theme.dart';
+import 'package:meu_app/features/radio/screens/radio_player_page.dart';
 import 'package:meu_app/features/radio/radio_stream_config.dart'
     show
         kAndroidMediaSeekSkipInterval,
@@ -18,33 +20,42 @@ import 'package:meu_app/features/radio/radio_stream_config.dart'
 Future<void> main() async {
   final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
   // Mantém a splash nativa (mesmo fundo/logo) até o Flutter poder pintar o ecrã
-  // equivalente — evita flash branco e duplo salto visual.
-  FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
-  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  // equivalente — evita flash branco e duplo salto visual. Web: sem splash nativa / ecrã extra.
+  if (!kIsWeb) {
+    FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  }
 
-  final bootstrapFuture = _bootstrapAudio();
-  final openingFuture = Future.wait<void>(<Future<void>>[
-    bootstrapFuture,
-    Future<void>.delayed(const Duration(milliseconds: 280)),
-  ]);
+  // Web: só [just_audio] no cliente — sem AudioService / sessão / arranque bloqueante.
+  if (!kIsWeb) {
+    await _bootstrapAudio();
+  }
+
+  final home = kIsWeb
+      ? const RadioPlayerPage()
+      : OpeningSplashGate(
+          initFuture: Future<void>.delayed(const Duration(milliseconds: 280)),
+        );
 
   runApp(
     ProviderScope(
-      child: RadioApp(
-        home: OpeningSplashGate(initFuture: openingFuture),
-      ),
+      child: RadioApp(home: home),
     ),
   );
 }
 
-/// Sessão de áudio + notificação em segundo plano. Falhas não bloqueiam [runApp].
+/// Sessão de áudio + notificação em segundo plano. Erros são registados; `runApp` corre na mesma.
 ///
-/// **Interrupções (chamada, etc.):** [AudioSessionConfiguration.music] + foco Android;
-/// [RadioPlayerUiNotifier] escuta [AudioSession.interruptionEventStream] para pausar/retomar a UI.
+/// **Ordem de arranque (como na 5.0):** este método é aguardado em `main()` antes de `runApp`,
+/// para o `AudioService` estar pronto antes de qualquer widget — evita notificação vazia ou
+/// 1.º `play` contra um handler ainda a inicializar.
 ///
-/// **Android:** `foregroundServiceType="mediaPlayback"` + `POST_NOTIFICATIONS` (API 33+).
-/// [androidStopForegroundOnPause] a `false` mantém o FGS visível em pausa (rádio — evita
-/// cortes agressivos em alguns OEMs e mantém a notificação utilizável).
+/// **Interrupções:** [AudioSessionConfiguration.music]; o leitor escuta
+/// [AudioSession.interruptionEventStream].
+///
+/// **Android:** `foregroundServiceType="mediaPlayback"`, permissão de notificações (API 33+)
+/// pedida antes do play no leitor, e `androidStopForegroundOnPause: true` como no
+/// just_audio_background 0.0.1-beta.17 (paridade com a 5.0).
 Future<void> _bootstrapAudio() async {
   try {
     final session = await AudioSession.instance;
@@ -72,20 +83,13 @@ Future<void> _bootstrapAudio() async {
       androidNotificationOngoing: true,
       androidResumeOnClick: true,
       androidNotificationClickStartsActivity: true,
-      // Rádio: manter notificação / FGS em pausa para segundo plano e controlos fiáveis.
-      androidStopForegroundOnPause: false,
+      // Igual à 5.0 (pub.dev): comportamento conhecido no telemóvel real.
+      androidStopForegroundOnPause: true,
       androidShowNotificationBadge: false,
       preloadArtwork: false,
-      artDownscaleWidth: 512,
-      artDownscaleHeight: 512,
-      // O stream é em directo (sem seek na UI); estes intervalos satisfazem a API
-      // audio_service / comandos remotos sem serem expostos como controlos úteis.
+      // O stream é em directo (sem seek na UI); intervalos mínimos para a API audio_service.
       fastForwardInterval: kAndroidMediaSeekSkipInterval,
       rewindInterval: kAndroidMediaSeekSkipInterval,
-      androidBrowsableRootExtras: const <String, dynamic>{
-        'android.media.browse.CONTENT_STYLE_SUPPORTED': true,
-        'android.media.browse.CONTENT_STYLE_PLAYABLE_HINT': 1,
-      },
     );
   } catch (e, stack) {
     FlutterError.reportError(

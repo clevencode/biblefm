@@ -110,6 +110,7 @@ flutter_launcher_icons:
     background_color: "#171717"
 
 # Splash nativa (#171717 + logo) até ao primeiro frame; iOS omitido.
+# Web: sem splash gerada — [web/index.html] só fundo sólido até ao 1.º frame Flutter.
 flutter_native_splash:
   color: "#171717"
   image: assets/splash_logo.png
@@ -117,5 +118,5 @@ flutter_native_splash:
   android_12:
     color: "#171717"
     image: assets/splash_logo.png
-  web: true
+  web: false
   ios: false

@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode, kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Tipo de ligação de rede (mais fino que só offline/online).
@@ -44,10 +44,15 @@ final networkOfflineProvider = Provider<bool>((ref) {
 });
 
 class NetworkConnectivityNotifier extends StateNotifier<RadioNetworkLink> {
-  NetworkConnectivityNotifier() : super(RadioNetworkLink.unknown) {
+  NetworkConnectivityNotifier()
+      : super(kIsWeb ? RadioNetworkLink.other : RadioNetworkLink.unknown) {
+    if (kIsWeb) {
+      initialConnectivityFuture = Future<void>.value();
+      return;
+    }
     _connectivity = Connectivity();
     initialConnectivityFuture = _bootstrap();
-    _subscription = _connectivity.onConnectivityChanged.listen(
+    _subscription = _connectivity!.onConnectivityChanged.listen(
       _apply,
       onError: (Object e, StackTrace st) {
         if (kDebugMode) {
@@ -57,16 +62,18 @@ class NetworkConnectivityNotifier extends StateNotifier<RadioNetworkLink> {
     );
   }
 
-  late final Connectivity _connectivity;
+  Connectivity? _connectivity;
   late final Future<void> initialConnectivityFuture;
   StreamSubscription<List<ConnectivityResult>>? _subscription;
 
   /// Primeira leitura da plataforma; útil antes do arranque automático do leitor.
   /// Re-tenta com pequenos atrasos se [checkConnectivity] falhar (evita ficar em [unknown]).
   Future<void> _bootstrap() async {
+    final c = _connectivity;
+    if (c == null) return;
     for (var attempt = 0; attempt < 5; attempt++) {
       try {
-        _apply(await _connectivity.checkConnectivity());
+        _apply(await c.checkConnectivity());
         return;
       } catch (_) {
         await Future<void>.delayed(Duration(milliseconds: 80 * (attempt + 1)));
@@ -77,10 +84,12 @@ class NetworkConnectivityNotifier extends StateNotifier<RadioNetworkLink> {
   /// Se, após [initialConnectivityFuture], o estado ainda for [unknown], volta a consultar a API.
   Future<void> ensureKnownLink() async {
     await initialConnectivityFuture;
+    final c = _connectivity;
+    if (c == null) return;
     for (var i = 0; i < 4 && state == RadioNetworkLink.unknown; i++) {
       await Future<void>.delayed(Duration(milliseconds: 100 * (i + 1)));
       try {
-        _apply(await _connectivity.checkConnectivity());
+        _apply(await c.checkConnectivity());
       } catch (_) {}
     }
   }

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -16,11 +17,13 @@ class RadioApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Radio Bible FM',
+      title: 'Bible FM',
       debugShowCheckedModeBanner: false,
       restorationScopeId: 'biblefm_app',
       themeMode: ThemeMode.dark,
       theme: AppTheme.dark,
+      // Textos da app em português; evita diálogos Material a seguirem só o locale do sistema.
+      locale: const Locale('pt'),
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
@@ -34,6 +37,10 @@ class RadioApp extends StatelessWidget {
         Locale('pt', 'BR'),
       ],
       builder: (context, child) {
+        final safeChild = child ?? const SizedBox.shrink();
+        // Web: sem barra de estado / navegação do SO nem clamp extra de escala.
+        if (kIsWeb) return safeChild;
+
         final isDark = Theme.of(context).brightness == Brightness.dark;
         final overlayStyle = SystemUiOverlayStyle(
           statusBarColor: Colors.transparent,
@@ -48,10 +55,8 @@ class RadioApp extends StatelessWidget {
         );
         final content = AnnotatedRegion<SystemUiOverlayStyle>(
           value: overlayStyle,
-          child: child ?? const SizedBox.shrink(),
+          child: safeChild,
         );
-        // Escala de texto: permite ampliar até ~175% (WCAG sugere até 200%;
-        // o tecto limita ruturas; o ecrã principal do player é rolável).
         final mq = MediaQuery.of(context);
         return MediaQuery(
           data: mq.copyWith(

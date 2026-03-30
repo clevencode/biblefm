@@ -2,10 +2,9 @@
 const String kBibleFmLiveStreamUrl =
     'https://servidor13.brlogic.com:7156/live';
 
-/// ID do canal de notificação de média. **Alterar** força canal novo nas definições
-/// (útil após mudanças de importância / nome). v2: alinhado a leitura em segundo plano.
+/// ID estável do canal (o mesmo da 5.0 onde a notificação era fiável).
 const String kAndroidRadioNotificationChannelId =
-    'com.exemplo.meu_app.channel.media_playback_v2';
+    'com.exemplo.meu_app.channel.audio';
 
 /// Nome do canal nas definições Android (Notificações → Bible FM).
 const String kAndroidRadioNotificationChannelName = 'Bible FM — Áudio';
@@ -28,10 +27,8 @@ const String kAndroidMediaNotificationIcon = 'drawable/ic_stat_audio';
 const String kBibleFmNotificationTitle = 'Bible FM';
 const String kBibleFmNotificationDescription = 'Rádio — transmissão contínua';
 
-/// Subtítulo dinâmico na notificação — ver [bibleFmMediaNotificationStatusLine].
-const String kBibleFmMediaNotificationLinePause = 'En pause';
-const String kBibleFmMediaNotificationLineEcoute = 'En écoute';
-const String kBibleFmMediaNotificationLineDirect = 'En direct';
+/// Subtítulo dinâmico na notificação: [bibleFmMediaNotificationStatusLine] e
+/// `lib/core/strings/bible_fm_strings.dart` (PT, alinhado ao chip do leitor).
 
 /// Terceira linha / agrupamento em alguns leitores de sistema (Auto, ecrã de bloqueio).
 const String kBibleFmNotificationAlbum = 'Ao vivo';

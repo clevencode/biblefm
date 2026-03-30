@@ -5,6 +5,10 @@ import 'package:meu_app/features/radio/screens/radio_player_page.dart';
 
 /// Orquestra o arranque: splash nativa → [OpeningSplashScreen] → leitor.
 ///
+/// `JustAudioBackground.init` e a sessão de áudio já foram configurados em `main()`
+/// com `await` antes de `runApp` (alinhado à 5.0 — evita corrida com o 1.º play).
+/// [initFuture] serve só à transição Flutter (ex. delay curto); não substitui o bootstrap de áudio.
+///
 /// Chama [FlutterNativeSplash.remove] no [initState] (síncrono), como no guia do
 /// pacote, para libertar o 1.º frame depois de [preserve] no `main`.
 class OpeningSplashGate extends StatefulWidget {

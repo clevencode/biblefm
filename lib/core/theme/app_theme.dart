@@ -335,6 +335,12 @@ abstract final class AppTheme {
           ? const Color(0xFFE3E2E0)
           : const Color(0xFF4A4A4A);
 
+  /// Trilho do comprimido **live + play** (cinza claro sobre fundo escuro).
+  static Color transportCapsuleTrack(Brightness brightness) =>
+      brightness == Brightness.dark
+          ? const Color(0xFFD6D6D4)
+          : const Color(0xFF3E3E3C);
+
   /// Círculo do indicador de pulso em **en direct** (a reproduzir).
   static Color transportLivePulseColor(Brightness brightness) =>
       brightness == Brightness.light

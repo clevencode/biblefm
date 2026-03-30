@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:meu_app/core/strings/bible_fm_strings.dart';
 import 'package:meu_app/core/theme/app_spacing.dart';
 import 'package:meu_app/core/theme/app_theme.dart';
 
-/// Indicador de estado: **verde** em en direct (a tocar); différé em **âmbar**;
-/// **vermelho** em pause com erro / hors ligne; **cinza** em pause neutro ([neutralPause]).
-/// A animação roda apenas durante reprodução (differe/en direct).
+/// Indicador de estado: **verde** em direto (a tocar); diferido em **âmbar**;
+/// **vermelho** em pausa com erro / sem rede; **cinza** em pausa neutra ([neutralPause]).
+/// A animação só corre durante reprodução.
 class LivePulsingIndicator extends StatefulWidget {
   const LivePulsingIndicator({
     super.key,
@@ -21,11 +22,11 @@ class LivePulsingIndicator extends StatefulWidget {
   final bool isEnDirect;
   final bool isPlaying;
   final bool pulseEnabled;
-  /// Alinhar ao chip «En pause» cinza (sem erreur / hors ligne).
+  /// Alinhar ao chip «Em pausa» cinza (sem erro / sem rede).
   final bool neutralPause;
   final VoidCallback? onTap;
 
-  /// Si non null, remplace le texte d'aide au survol / long appui.
+  /// Se não for null, substitui o texto de tooltip por omissão.
   final String? tooltip;
 
   @override
@@ -115,32 +116,32 @@ class _LivePulsingIndicatorState extends State<LivePulsingIndicator>
         ? (widget.isEnDirect ? liveGreen : deferredAmber)
         : (widget.neutralPause ? pausedNeutral : pausedRed);
     final defaultTooltip = !widget.isEnDirect
-        ? 'Lecture différée (pas en direct)'
+        ? kBibleFmPulseTooltipDeferred
         : widget.onTap == null
-            ? 'Signal du direct (fixe). Passez en direct pour l’animer.'
+            ? kBibleFmPulseTooltipFixed
             : widget.pulseEnabled
-                ? 'Appuyez pour arrêter l’animation du signal'
-                : 'Appuyez pour animer le signal du direct';
+                ? kBibleFmPulseTooltipStopAnim
+                : kBibleFmPulseTooltipStartAnim;
 
     final tooltipText = widget.tooltip ?? defaultTooltip;
 
     final String a11yLabel;
     final String? a11yHint;
     if (!widget.isEnDirect && !widget.isPlaying) {
-      a11yLabel = 'Indicateur en pause';
+      a11yLabel = kBibleFmPulseA11yPaused;
       a11yHint = null;
     } else if (!widget.isEnDirect) {
-      a11yLabel = 'Indicateur différé, pas en direct';
+      a11yLabel = kBibleFmPulseA11yDeferred;
       a11yHint = null;
     } else if (widget.onTap == null) {
-      a11yLabel = 'Indicateur du direct, signal fixe';
+      a11yLabel = kBibleFmPulseA11yLiveFixed;
       a11yHint = null;
     } else if (widget.pulseEnabled) {
-      a11yLabel = 'Signal du direct animé';
-      a11yHint = 'Appuyez pour arrêter l’animation';
+      a11yLabel = kBibleFmPulseA11yLiveAnimated;
+      a11yHint = kBibleFmPulseHintStopAnim;
     } else {
-      a11yLabel = 'Signal du direct';
-      a11yHint = 'Appuyez pour activer l’animation';
+      a11yLabel = kBibleFmPulseA11yLive;
+      a11yHint = kBibleFmPulseHintStartAnim;
     }
 
     Widget indicator = Semantics(

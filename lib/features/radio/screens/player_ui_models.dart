@@ -1,4 +1,4 @@
-import 'package:meu_app/features/radio/radio_stream_config.dart';
+import 'package:meu_app/core/strings/bible_fm_strings.dart';
 
 /// Estados apenas para a UI (sem backend de áudio).
 ///
@@ -16,6 +16,20 @@ enum UiPlaybackLifecycle {
 bool isTransportLoadingUiLifecycle(UiPlaybackLifecycle lifecycle) {
   return lifecycle == UiPlaybackLifecycle.preparing ||
       lifecycle == UiPlaybackLifecycle.buffering;
+}
+
+/// Expõe a mesma regra que [RadioPlayerUiState.canTapLive] para `select` granular.
+bool radioUiCanTapLive(UiPlaybackLifecycle lifecycle, bool isLiveMode) {
+  if (isTransportLoadingUiLifecycle(lifecycle)) return false;
+  if (lifecycle == UiPlaybackLifecycle.idle) return true;
+  if (lifecycle == UiPlaybackLifecycle.paused) return true;
+  return !isLiveMode;
+}
+
+/// Expõe a mesma regra que [RadioPlayerUiState.isEnDirect] para `select` granular.
+bool radioUiIsEnDirect(UiPlaybackLifecycle lifecycle, bool isLiveMode) {
+  final playing = lifecycle == UiPlaybackLifecycle.playing;
+  return playing && !isTransportLoadingUiLifecycle(lifecycle) && isLiveMode;
 }
 
 /// Linha de estado na notificação de média / lock screen (alinhada à UI do leitor).

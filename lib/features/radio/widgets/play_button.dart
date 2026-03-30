@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:meu_app/core/strings/bible_fm_strings.dart';
 import 'package:meu_app/core/theme/app_spacing.dart';
 import 'package:meu_app/core/theme/app_theme.dart';
 
@@ -95,8 +96,8 @@ class _PlayButtonState extends State<PlayButton> {
             'Erro ou interrupção — toque para voltar a ligar à rádio';
       }
     } else if (widget.isOffline && !widget.isPlaying && !widget.isLoading) {
-      a11yLabel = 'Lecture indisponible sans connexion réseau';
-      tooltipMsg = 'Sem ligação à Internet';
+      a11yLabel = kBibleFmPlayA11yOffline;
+      tooltipMsg = kBibleFmLiveTooltipOffline;
     } else if (widget.isLoading) {
       if (widget.isPreparing) {
         a11yLabel = 'A preparar o fluxo de áudio';
@@ -106,11 +107,11 @@ class _PlayButtonState extends State<PlayButton> {
         tooltipMsg = 'A ligar ao fluxo…';
       }
     } else if (widget.isPlaying) {
-      a11yLabel = 'Mettre en pause la lecture';
-      tooltipMsg = 'Pause';
+      a11yLabel = kBibleFmPlayA11yPause;
+      tooltipMsg = kBibleFmPlayTooltipPause;
     } else {
-      a11yLabel = 'Lancer la lecture';
-      tooltipMsg = 'Lecture';
+      a11yLabel = kBibleFmPlayA11yStart;
+      tooltipMsg = kBibleFmPlayTooltipStart;
     }
 
     return Semantics(
@@ -119,47 +120,54 @@ class _PlayButtonState extends State<PlayButton> {
       label: a11yLabel,
       child: Tooltip(
         message: tooltipMsg,
-        waitDuration: const Duration(milliseconds: 400),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(buttonSize),
-          hoverColor: isDark
-              ? Colors.black.withValues(alpha: 0.06)
-              : Colors.white.withValues(alpha: 0.12),
-          splashColor: isDark
-              ? Colors.black.withValues(alpha: 0.1)
-              : Colors.white.withValues(alpha: 0.18),
-          onTap: canTap
-              ? () {
-                  if (restartMode) {
-                    widget.onOfflineRestartApp?.call();
-                  } else {
-                    widget.onTap?.call();
+        waitDuration: const Duration(milliseconds: 320),
+        child: MouseRegion(
+          cursor:
+              canTap ? SystemMouseCursors.click : SystemMouseCursors.basic,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(buttonSize),
+            hoverColor: isDark
+                ? Colors.black.withValues(alpha: 0.06)
+                : Colors.white.withValues(alpha: 0.12),
+            splashColor: isDark
+                ? Colors.black.withValues(alpha: 0.1)
+                : Colors.white.withValues(alpha: 0.18),
+            highlightColor: canTap ? null : Colors.transparent,
+            onTap: canTap
+                ? () {
+                    if (restartMode) {
+                      widget.onOfflineRestartApp?.call();
+                    } else {
+                      widget.onTap?.call();
+                    }
                   }
-                }
-              : null,
-          child: AnimatedOpacity(
-            duration: const Duration(milliseconds: 180),
-            opacity: effectiveOpacity,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 220),
-              curve: Curves.easeOutCubic,
-              width: buttonSize,
-              height: buttonSize,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: fillColor,
-              ),
-              child: Center(
-                child: widget.isLoading && !restartMode
-                    ? SizedBox(
-                        width: progressSize,
-                        height: progressSize,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2.3,
-                          color: iconColor,
-                        ),
-                      )
-                    : Icon(iconData, size: iconSize, color: iconColor),
+                : null,
+            child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 160),
+              opacity: effectiveOpacity,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOutCubic,
+                width: buttonSize,
+                height: buttonSize,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: fillColor,
+                ),
+                child: Center(
+                  child: widget.isLoading && !restartMode
+                      ? SizedBox(
+                          width: progressSize,
+                          height: progressSize,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: iconColor,
+                            backgroundColor: iconColor.withValues(alpha: 0.12),
+                            strokeCap: StrokeCap.round,
+                          ),
+                        )
+                      : Icon(iconData, size: iconSize, color: iconColor),
+                ),
               ),
             ),
           ),

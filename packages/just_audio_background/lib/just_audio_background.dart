@@ -812,14 +812,17 @@ class _PlayerAudioHandler extends BaseAudioHandler
   }
 
   /// Jumps away from the current position by [offset].
+  /// Streams sem [MediaItem.duration] (ex.: rádio): não usar `!` em duration —
+  /// evita excepção ao tratar comandos remotos (seek / avanço) e derrubar a sessão.
   Future<void> _seekRelative(Duration offset) async {
+    final item = currentMediaItem;
+    if (item == null) return;
     var newPosition = currentPosition + offset;
-    // Make sure we don't jump out of bounds.
     if (newPosition < Duration.zero) newPosition = Duration.zero;
-    if (newPosition > currentMediaItem!.duration!) {
-      newPosition = currentMediaItem!.duration!;
+    final duration = item.duration;
+    if (duration != null && newPosition > duration) {
+      newPosition = duration;
     }
-    // Perform the jump via a seek.
     await (await _player).seek(SeekRequest(position: newPosition));
   }
 
@@ -828,9 +831,10 @@ class _PlayerAudioHandler extends BaseAudioHandler
   /// intervals of 1 second in app time.
   void _seekContinuously(bool begin, int direction) {
     _seeker?.stop();
-    if (begin) {
+    final duration = currentMediaItem?.duration;
+    if (begin && duration != null) {
       _seeker = _Seeker(this, Duration(seconds: 10 * direction),
-          const Duration(seconds: 1), currentMediaItem!.duration!)
+          const Duration(seconds: 1), duration)
         ..start();
     }
   }
@@ -856,9 +860,13 @@ class _PlayerAudioHandler extends BaseAudioHandler
     ];
     playbackState.add(playbackState.nvalue!.copyWith(
       controls: controls,
-      // Stream em directo sem seek: não anunciar avanço/recuar na sessão (evita
-      // controlos enganadores e chamadas a seek com duração nula).
-      systemActions: const <MediaAction>{},
+      // Alinhar ao just_audio_background 0.0.1-beta.17: conjunto vazio quebrou
+      // a MediaSession / notificação em alguns dispositivos reais (OEM).
+      systemActions: {
+        MediaAction.seek,
+        MediaAction.seekForward,
+        MediaAction.seekBackward,
+      },
       androidCompactActionIndices: _androidCompactMediaControlIndices(controls),
       processingState: _justAudioEvent.errorCode != null
           ? AudioProcessingState.error

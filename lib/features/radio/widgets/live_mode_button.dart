@@ -1,12 +1,11 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
+import 'package:meu_app/core/strings/bible_fm_strings.dart';
 import 'package:meu_app/core/theme/app_spacing.dart';
 import 'package:meu_app/core/theme/app_theme.dart';
 import 'package:meu_app/features/radio/screens/player_ui_models.dart';
 import 'package:meu_app/features/radio/widgets/broadcast_signal_icon.dart';
 
-/// Botão de modo direto em formato **pílula** (barra de transporte).
+/// Botão **direto / emissão** — disco circular alinhado ao [PlayButton] dentro do comprimido.
 class LiveModeButton extends StatelessWidget {
   const LiveModeButton({
     super.key,
@@ -17,10 +16,9 @@ class LiveModeButton extends StatelessWidget {
     required this.onPressed,
     required this.scale,
     required this.size,
-    this.narrowMobile = false,
   });
 
-  /// Ordem: idle → carregar → play/pause; direct só após haver sessão de leitura.
+  /// idle pode iniciar já em direto; em load o toque fica indisponível.
   final UiPlaybackLifecycle playbackLifecycle;
   final bool isLiveMode;
   final bool isPaused;
@@ -28,32 +26,21 @@ class LiveModeButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final double scale;
 
-  /// Diâmetro do play à direita; na pílula é a **altura** do comprimido.
+  /// Diâmetro; igual ao botão play no mesmo comprimido.
   final double size;
-
-  /// Mobile-first: pílula mais longa em ecrãs estreitos (referência visual).
-  final bool narrowMobile;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final brightness = Theme.of(context).brightness;
     final isDark = brightness == Brightness.dark;
-    final iconColor = AppTheme.transportLiveIcon(brightness);
-    // Escuro: painel elevado. Claro: papel (#F3F2EF) — branco puro sumia no gradiente.
-    final baseFillColor = brightness == Brightness.light
-        ? scheme.surfaceContainerLow
-        : scheme.surfaceContainerHighest;
-    final liveBorderColor = brightness == Brightness.light
-        ? AppTheme.transportLiveBorder(brightness)
-        : scheme.outline.withValues(alpha: 0.85);
-    // Preenchimento sólido só com directo **ativo** (a ouvir em live, sem pausa).
-    // Em pause ou em différé: só traço (sem preenchimento).
-    final liveSurfaceActive = isLiveMode && !isPaused;
-    final fillColor = liveSurfaceActive ? baseFillColor : Colors.transparent;
-    final borderColor = liveBorderColor;
+    final fillColor = AppTheme.transportPlayFill(brightness);
+    final iconColor = AppTheme.transportPlayIcon(brightness);
 
-    final iconSize = (size * 0.38).clamp(
+    final buttonSize = size.clamp(
+      AppSpacing.g(AppSpacing.playControlDiameterMinSteps, scale),
+      AppSpacing.g(AppSpacing.playControlDiameterMaxSteps, scale),
+    );
+    final iconSize = (buttonSize * 0.38).clamp(
       AppSpacing.g(3, scale),
       AppSpacing.g(5, scale),
     );
@@ -62,77 +49,67 @@ class LiveModeButton extends StatelessWidget {
     String semanticsLabel;
     String tooltipMsg;
     if (isOffline) {
-      semanticsLabel = 'Direct indisponível sem rede';
-      tooltipMsg = 'Sem ligação à Internet';
+      semanticsLabel = kBibleFmLiveA11yOffline;
+      tooltipMsg = kBibleFmLiveTooltipOffline;
     } else if (isTransportLoadingUiLifecycle(playbackLifecycle)) {
-      semanticsLabel = 'Directo após o fluxo estabilizar';
-      tooltipMsg = 'Aguarde o fluxo estabilizar antes do directo';
+      semanticsLabel = kBibleFmLiveA11yWaitStabilize;
+      tooltipMsg = kBibleFmLiveTooltipWaitStabilize;
     } else if (playbackLifecycle == UiPlaybackLifecycle.idle) {
-      semanticsLabel = 'Directo após iniciar a leitura';
-      tooltipMsg = 'Inicie a leitura antes de activar o directo';
+      if (canTap) {
+        semanticsLabel = kBibleFmLiveA11yGoLive;
+        tooltipMsg = kBibleFmLiveTooltipGoLive;
+      } else {
+        semanticsLabel = kBibleFmLiveA11yAfterStart;
+        tooltipMsg = kBibleFmLiveTooltipAfterStart;
+      }
     } else if (isLiveMode && !isPaused && !canTap) {
-      semanticsLabel = 'Direct actif';
-      tooltipMsg = 'Direct actif';
+      semanticsLabel = kBibleFmLiveA11yActive;
+      tooltipMsg = kBibleFmLiveTooltipActive;
     } else if (isLiveMode && isPaused && canTap) {
-      semanticsLabel = 'Rattraper le direct par paliers';
-      tooltipMsg =
-          'Rapprocher le compteur du direct sans remettre à zéro (répéter après pause)';
+      semanticsLabel = kBibleFmLiveA11yCatchUp;
+      tooltipMsg = kBibleFmLiveTooltipCatchUp;
     } else if (canTap) {
-      semanticsLabel = 'Passer en écoute du direct';
-      tooltipMsg = 'Écouter le direct';
+      semanticsLabel = kBibleFmLiveA11yGoLive;
+      tooltipMsg = kBibleFmLiveTooltipGoLive;
     } else {
-      semanticsLabel = 'Direct : mettre la lecture en pause pour activer';
-      tooltipMsg = 'Mettre la lecture en pause pour activer l’écoute du direct';
+      semanticsLabel = kBibleFmLiveA11yPauseToEnable;
+      tooltipMsg = kBibleFmLiveTooltipPauseToEnable;
     }
 
-    final radius = size / 2;
-    final pillWFactor = narrowMobile ? 2.28 : 2.05;
-    final pillWidth = math.max(
-      size * pillWFactor,
-      AppSpacing.g(
-        AppSpacing.livePillMinWidthSteps(narrow: narrowMobile),
-        scale,
-      ),
-    );
-    final pillHeight = size;
-
-    final decoration = BoxDecoration(
-      color: fillColor,
-      borderRadius: BorderRadius.circular(radius),
-      border: Border.all(color: borderColor, width: 1),
-    );
-
-    final child = BroadcastSignalIcon(color: iconColor, size: iconSize);
-
-    Widget pill = InkWell(
-      borderRadius: BorderRadius.circular(radius),
+    Widget circle = InkWell(
+      borderRadius: BorderRadius.circular(buttonSize / 2),
       hoverColor: !canTap
           ? Colors.transparent
           : (isDark
-                ? AppTheme.darkHoverOverlay(scheme)
-                : Colors.black.withValues(alpha: 0.06)),
+              ? Colors.black.withValues(alpha: 0.06)
+              : Colors.white.withValues(alpha: 0.12)),
       splashColor: !canTap
           ? Colors.transparent
           : (isDark
-                ? AppTheme.darkHoverOverlay(scheme)
-                : Colors.black.withValues(alpha: 0.08)),
+              ? Colors.black.withValues(alpha: 0.1)
+              : Colors.white.withValues(alpha: 0.18)),
       highlightColor: !canTap ? Colors.transparent : null,
       onTap: onPressed,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 240),
+        duration: const Duration(milliseconds: 200),
         curve: Curves.easeOutCubic,
-        width: pillWidth,
-        height: pillHeight,
+        width: buttonSize,
+        height: buttonSize,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: fillColor,
+        ),
         alignment: Alignment.center,
-        decoration: decoration,
-        padding: EdgeInsets.symmetric(horizontal: AppSpacing.g(1, scale)),
-        child: child,
+        child: BroadcastSignalIcon(color: iconColor, size: iconSize),
       ),
     );
     if (isOffline) {
-      pill = Opacity(opacity: 0.65, child: pill);
+      circle = Opacity(opacity: 0.65, child: circle);
+    } else if (playbackLifecycle != UiPlaybackLifecycle.playing) {
+      // Parado / a carregar: visual «não ao vivo» (opaco só durante reprodução).
+      circle = Opacity(opacity: 0.45, child: circle);
     } else if (!canTap && !isLiveMode) {
-      pill = Opacity(opacity: 0.5, child: pill);
+      circle = Opacity(opacity: 0.52, child: circle);
     }
 
     return Semantics(
@@ -142,10 +119,10 @@ class LiveModeButton extends StatelessWidget {
       label: semanticsLabel,
       child: Tooltip(
         message: tooltipMsg,
-        waitDuration: const Duration(milliseconds: 400),
+        waitDuration: const Duration(milliseconds: 320),
         child: MouseRegion(
           cursor: canTap ? SystemMouseCursors.click : SystemMouseCursors.basic,
-          child: pill,
+          child: circle,
         ),
       ),
     );
