@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="fr" xml:lang="fr">
 <head>
   <base href="$FLUTTER_BASE_HREF">
   <!-- SEO: substitua clevencode.github.io/biblefm por um domínio fixo se aplicável. -->
@@ -15,6 +15,8 @@
   <meta name="format-detection" content="telephone=no">
 
   <link rel="canonical" href="https://clevencode.github.io/biblefm/">
+  <link rel="alternate" href="https://clevencode.github.io/biblefm/" hreflang="fr">
+  <link rel="alternate" href="https://clevencode.github.io/biblefm/" hreflang="x-default">
 
   <meta property="og:type" content="website">
   <meta property="og:title" content="Bible FM — Radio en direct">
@@ -77,6 +79,8 @@
         "url": "https://clevencode.github.io/biblefm/",
         "applicationCategory": "EntertainmentApplication",
         "operatingSystem": "Web",
+        "inLanguage": "fr-FR",
+        "isAccessibleForFree": true,
         "browserRequirements": "Requires JavaScript. HTML5 audio.",
         "description": "Lecteur de radio Bible FM pour le web : direct, contrôles audio et minuteur de sommeil.",
         "offers": {
@@ -84,12 +88,6 @@
           "price": "0",
           "priceCurrency": "USD"
         }
-      },
-      {
-        "@type": "RadioStation",
-        "name": "Bible FM",
-        "url": "https://clevencode.github.io/biblefm/",
-        "broadcastDisplayName": "Bible FM"
       }
     ]
   }
@@ -101,10 +99,12 @@
   </style>
 </head>
 <body>
-  <noscript>
-    <h1>Bible FM</h1>
-    <p>Écoutez Bible FM dans votre navigateur. Activez JavaScript pour charger le lecteur web.</p>
-  </noscript>
+  <main id="main-content" role="main" aria-label="Lecteur radio Bible FM">
+    <noscript>
+      <h1>Bible FM</h1>
+      <p>Écoutez Bible FM dans votre navigateur. Activez JavaScript pour charger le lecteur web.</p>
+    </noscript>
+  </main>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

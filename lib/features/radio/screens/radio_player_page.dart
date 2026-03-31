@@ -8,6 +8,9 @@ import 'package:meu_app/features/radio/radio_stream_config.dart';
 import 'package:meu_app/features/radio/widgets/broadcast_signal_icon.dart';
 import 'package:meu_app/features/radio/widgets/web_native_audio.dart';
 
+/// Ancora visual: barra do temporizador alinha logo abaixo desta cápsula.
+final GlobalKey _kWebTransportCapsule = GlobalKey(debugLabel: 'webTransportCapsule');
+
 /// Bible FM — leitor **apenas Web** (`<audio controls>` + botão directo).
 class RadioPlayerPage extends StatelessWidget {
   const RadioPlayerPage({super.key});
@@ -76,6 +79,7 @@ class RadioPlayerPage extends StatelessWidget {
                         const _WebRealtimeFeedbackLine(),
                         const SizedBox(height: 16),
                         DecoratedBox(
+                          key: _kWebTransportCapsule,
                           decoration: BoxDecoration(
                             color: AppTheme.transportCapsuleTrack(brightness),
                             borderRadius: BorderRadius.circular(
@@ -399,8 +403,6 @@ class _WebSleepTimerButton extends StatefulWidget {
   State<_WebSleepTimerButton> createState() => _WebSleepTimerButtonState();
 }
 
-enum _SleepInputUnit { hour, minute }
-
 class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
   Timer? _ticker;
   DateTime? _endAt;
@@ -469,123 +471,130 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
 
   Future<void> _openSleepConfigurator() async {
     final hasTimer = _endAt != null;
-    final inputController = TextEditingController();
-    var unit = _SleepInputUnit.minute;
-    bool canApply() {
-      final raw = int.tryParse(inputController.text.trim()) ?? 0;
-      return raw > 0;
+    final hoursController = TextEditingController();
+    final minutesController = TextEditingController();
+    final minutesFocus = FocusNode();
+
+    int totalMinutesFromFields() {
+      final h = int.tryParse(hoursController.text.trim()) ?? 0;
+      final m = int.tryParse(minutesController.text.trim()) ?? 0;
+      return h * 60 + m;
     }
 
+    bool canApply() => totalMinutesFromFields() > 0;
+
     try {
-      await showDialog<void>(
+      const gapBelowTransport = 12.0;
+      const minScreenPad = 16.0;
+      const sleepBarHeight = 72.0;
+
+      await showGeneralDialog<void>(
         context: context,
         barrierDismissible: true,
-        builder: (dialogContext) {
+        barrierLabel:
+            MaterialLocalizations.of(context).modalBarrierDismissLabel,
+        barrierColor: Colors.black.withValues(alpha: 0.32),
+        transitionDuration: const Duration(milliseconds: 180),
+        pageBuilder: (dialogContext, animation, secondaryAnimation) {
           final brightness = Theme.of(dialogContext).brightness;
-          final screenW = MediaQuery.sizeOf(dialogContext).width;
-          // Mesma lógica que [RadioPlayerPage]: padding horizontal 24 + maxWidth 560.
+          final screenSize = MediaQuery.sizeOf(dialogContext);
+          final screenW = screenSize.width;
           final targetW = (screenW - 48).clamp(280.0, 560.0).toDouble();
-          const webCapsuleH = 52.0;
-          return SafeArea(
-            child: Align(
-              // Eixo vertical semelhante à cápsula de áudio: bloco centrado no SafeArea,
-              // com a barra ligeiramente abaixo do centro (linha de estado + espaçamento).
-              alignment: const Alignment(0, 0.12),
-              child: Dialog(
-                insetPadding: EdgeInsets.zero,
-                backgroundColor: Colors.transparent,
-                child: StatefulBuilder(
-                  builder: (context, setLocalState) {
-                    final valid = canApply();
-                    return SizedBox(
-                      width: targetW,
-                      height: 52,
-                      child: DecoratedBox(
+
+          final capsuleBox =
+              _kWebTransportCapsule.currentContext?.findRenderObject()
+                  as RenderBox?;
+          double top;
+          double left;
+          if (capsuleBox != null && capsuleBox.hasSize && capsuleBox.attached) {
+            final origin = capsuleBox.localToGlobal(Offset.zero);
+            top = origin.dy + capsuleBox.size.height + gapBelowTransport;
+            left = origin.dx + (capsuleBox.size.width - targetW) / 2;
+            left = left.clamp(minScreenPad, screenW - targetW - minScreenPad);
+            final maxTop = (screenSize.height -
+                    sleepBarHeight -
+                    minScreenPad)
+                .clamp(minScreenPad, double.infinity)
+                .toDouble();
+            top = top.clamp(minScreenPad, maxTop);
+          } else {
+            top = screenSize.height * 0.42;
+            left = (screenW - targetW) / 2;
+          }
+
+          void applyAndClose() {
+            if (hasTimer || !canApply()) return;
+            _startSleepTimer(totalMinutesFromFields());
+            Navigator.of(dialogContext).pop();
+          }
+
+          return Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned(
+                top: top,
+                left: left,
+                width: targetW,
+                height: sleepBarHeight,
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: StatefulBuilder(
+                    builder: (context, setLocalState) {
+                      final valid = canApply();
+                      return DecoratedBox(
                         decoration: BoxDecoration(
                           color: AppTheme.transportCapsuleTrack(brightness),
-                          borderRadius: BorderRadius.circular(webCapsuleH / 2),
+                          borderRadius:
+                              BorderRadius.circular(sleepBarHeight / 2),
                           border: Border.all(
-                            color: AppTheme.transportCapsuleOutline(brightness),
+                            color:
+                                AppTheme.transportCapsuleOutline(brightness),
                             width: 1,
                           ),
                         ),
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 6,
-                          ),
+                          padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
                           child: Row(
-                            mainAxisSize: MainAxisSize.max,
+                            crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
-                              _SleepUnitChip(
-                                label: 'Heure',
-                                selected: unit == _SleepInputUnit.hour,
-                                onTap: () => setLocalState(
-                                  () => unit = _SleepInputUnit.hour,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              _SleepUnitChip(
-                                label: 'Minute',
-                                selected: unit == _SleepInputUnit.minute,
-                                onTap: () => setLocalState(
-                                  () => unit = _SleepInputUnit.minute,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
                               Expanded(
-                                child: _SleepChipField(
-                                  width: 180,
-                                  hintText: kBibleFmWebFrSleepInputHint,
-                                  label: kBibleFmWebFrSleepInputHint,
-                                  controller: inputController,
-                                  autofocus: true,
-                                  onChanged: (_) => setLocalState(() {}),
-                                  onSubmitted: (_) {
-                                    if (hasTimer || !canApply()) return;
-                                    final raw = int.tryParse(
-                                          inputController.text.trim(),
-                                        ) ??
-                                        0;
-                                    final minutes = unit == _SleepInputUnit.hour
-                                        ? raw * 60
-                                        : raw;
-                                    _startSleepTimer(minutes);
-                                    Navigator.of(dialogContext).pop();
-                                  },
+                                child: _SleepHmUnderlineFields(
+                                  brightness: brightness,
+                                  hoursController: hoursController,
+                                  minutesController: minutesController,
+                                  minutesFocus: minutesFocus,
+                                  onChanged: () => setLocalState(() {}),
+                                  onHoursSubmitted: () =>
+                                      minutesFocus.requestFocus(),
+                                  onMinutesSubmitted: applyAndClose,
                                 ),
                               ),
-                              const SizedBox(width: 8),
+                              const SizedBox(width: 4),
                               _SleepActionButton(
                                 cancelMode: false,
                                 enabled: valid,
                                 onTap: () {
-                                  final raw = int.tryParse(
-                                        inputController.text.trim(),
-                                      ) ??
-                                      0;
-                                  if (raw <= 0) return;
-                                  final minutes = unit == _SleepInputUnit.hour
-                                      ? raw * 60
-                                      : raw;
-                                  _startSleepTimer(minutes);
+                                  if (hasTimer || !canApply()) return;
+                                  _startSleepTimer(totalMinutesFromFields());
                                   Navigator.of(dialogContext).pop();
                                 },
                               ),
                             ],
                           ),
                         ),
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
               ),
-            ),
+            ],
           );
         },
       );
     } finally {
-      inputController.dispose();
+      hoursController.dispose();
+      minutesController.dispose();
+      minutesFocus.dispose();
     }
   }
 
@@ -649,170 +658,132 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
   }
 }
 
-class _SleepUnitChip extends StatelessWidget {
-  const _SleepUnitChip({
-    required this.label,
-    required this.selected,
-    required this.onTap,
+/// Saisie H:M minimaliste — chiffres + « : », trait de base, légendes H / M.
+class _SleepHmUnderlineFields extends StatelessWidget {
+  const _SleepHmUnderlineFields({
+    required this.brightness,
+    required this.hoursController,
+    required this.minutesController,
+    required this.minutesFocus,
+    required this.onChanged,
+    required this.onHoursSubmitted,
+    required this.onMinutesSubmitted,
   });
 
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
+  final Brightness brightness;
+  final TextEditingController hoursController;
+  final TextEditingController minutesController;
+  final FocusNode minutesFocus;
+  final VoidCallback onChanged;
+  final VoidCallback onHoursSubmitted;
+  final VoidCallback onMinutesSubmitted;
+
+  static const double _colonTrack = 14;
 
   @override
   Widget build(BuildContext context) {
-    final brightness = Theme.of(context).brightness;
-    final rim = AppTheme.transportLiveBorder(brightness);
     final onChrome = AppTheme.transportChromeOnInner(brightness);
-    final chromeInner = AppTheme.transportChromeInnerFill(brightness);
-    final chipFill = selected
-        ? chromeInner
-        : chromeInner.withValues(
-            alpha: brightness == Brightness.light ? 0.76 : 0.86,
-          );
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Ink(
-        height: 40,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        decoration: BoxDecoration(
-          color: chipFill,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: selected
-                ? AppTheme.transportChromeTimelineTrack(brightness).withValues(
-                    alpha: brightness == Brightness.light ? 0.82 : 0.58,
-                  )
-                : rim.withValues(
-                    alpha: brightness == Brightness.light ? 0.48 : 0.4,
-                  ),
-            width: 1,
-          ),
-        ),
-        child: Center(
-          child: Text(
-            label,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: onChrome.withValues(
-                    alpha: selected
-                        ? 1.0
-                        : brightness == Brightness.light
-                            ? 0.72
-                            : 0.78,
-                  ),
-                  fontWeight:
-                      selected ? FontWeight.w700 : FontWeight.w500,
-                ),
-          ),
-        ),
-      ),
+    final digitStyle = TextStyle(
+      color: onChrome,
+      fontWeight: FontWeight.w600,
+      fontSize: 22,
+      height: 1.05,
     );
-  }
-}
+    final labelStyle =
+        Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: onChrome.withValues(
+                alpha: brightness == Brightness.light ? 0.72 : 0.78,
+              ),
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.6,
+            );
 
-class _SleepChipField extends StatelessWidget {
-  const _SleepChipField({
-    required this.width,
-    this.hintText,
-    this.label,
-    required this.controller,
-    this.autofocus = false,
-    this.onChanged,
-    this.onSubmitted,
-  });
+    InputDecoration deco(String hint) => InputDecoration(
+          hintText: hint,
+          hintStyle: TextStyle(
+            color: onChrome.withValues(alpha: 0.32),
+            fontWeight: FontWeight.w500,
+            fontSize: 22,
+          ),
+          isDense: true,
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.only(bottom: 8, top: 2),
+        );
 
-  final double width;
-  // Mantido para compatibilidade com hot reload após refactor.
-  final String? hintText;
-  // Campo legado mantido para evitar "Const class cannot remove fields".
-  final String? label;
-  final TextEditingController controller;
-  final bool autofocus;
-  final ValueChanged<String>? onChanged;
-  final ValueChanged<String>? onSubmitted;
-
-  @override
-  Widget build(BuildContext context) {
-    final brightness = Theme.of(context).brightness;
-    final onChrome = AppTheme.transportChromeOnInner(brightness);
-    final chromeInner = AppTheme.transportChromeInnerFill(brightness);
-    final radius = BorderRadius.circular(20);
-    return SizedBox(
-      width: width,
-      child: ClipRRect(
-        borderRadius: radius,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            DecoratedBox(
+    return Semantics(
+      label: kBibleFmWebFrSleepInputHint,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: hoursController,
+                  autofocus: true,
+                  textAlign: TextAlign.center,
+                  keyboardType: TextInputType.number,
+                  textInputAction: TextInputAction.next,
+                  style: digitStyle,
+                  cursorColor: onChrome,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(2),
+                  ],
+                  decoration: deco('0'),
+                  onChanged: (_) => onChanged(),
+                  onSubmitted: (_) => onHoursSubmitted(),
+                ),
+              ),
+              SizedBox(
+                width: _colonTrack,
+                child: Center(child: Text(':', style: digitStyle)),
+              ),
+              Expanded(
+                child: TextField(
+                  controller: minutesController,
+                  focusNode: minutesFocus,
+                  textAlign: TextAlign.center,
+                  keyboardType: TextInputType.number,
+                  textInputAction: TextInputAction.done,
+                  style: digitStyle,
+                  cursorColor: onChrome,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(2),
+                  ],
+                  decoration: deco('0'),
+                  onChanged: (_) => onChanged(),
+                  onSubmitted: (_) => onMinutesSubmitted(),
+                ),
+              ),
+            ],
+          ),
+          SizedBox(
+            height: 2,
+            child: DecoratedBox(
               decoration: BoxDecoration(
-                color: chromeInner,
-                borderRadius: radius,
-                border: Border.all(
-                  color:
-                      AppTheme.transportChromeTimelineTrack(brightness).withValues(
-                    alpha: brightness == Brightness.light ? 0.75 : 0.55,
-                  ),
-                ),
-              ),
-              child: const SizedBox.expand(),
-            ),
-            Positioned.fill(
-              child: IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.black.withValues(
-                          alpha: brightness == Brightness.light ? 0.055 : 0.095,
-                        ),
-                        Colors.transparent,
-                      ],
-                      stops: const [0.0, 0.42],
-                    ),
-                  ),
-                ),
+                color: onChrome.withValues(alpha: 0.82),
+                borderRadius: BorderRadius.circular(1),
               ),
             ),
-            TextField(
-              controller: controller,
-              autofocus: autofocus,
-              textAlign: TextAlign.center,
-              keyboardType: TextInputType.number,
-              cursorColor: onChrome,
-              style: TextStyle(
-                color: onChrome,
-                fontWeight: FontWeight.w600,
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: Center(child: Text('H', style: labelStyle)),
               ),
-              inputFormatters: [
-                FilteringTextInputFormatter.digitsOnly,
-                LengthLimitingTextInputFormatter(4),
-              ],
-              onChanged: onChanged,
-              onSubmitted: onSubmitted,
-              decoration: InputDecoration(
-                hintText: hintText ?? label ?? '',
-                hintStyle: TextStyle(
-                  color: onChrome.withValues(
-                    alpha: brightness == Brightness.light ? 0.44 : 0.42,
-                  ),
-                ),
-                filled: true,
-                fillColor: Colors.transparent,
-                isDense: true,
-                border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 12,
-                ),
+              const SizedBox(width: _colonTrack),
+              Expanded(
+                child: Center(child: Text('M', style: labelStyle)),
               ),
-            ),
-          ],
-        ),
+            ],
+          ),
+        ],
       ),
     );
   }
