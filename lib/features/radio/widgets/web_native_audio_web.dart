@@ -7,7 +7,17 @@ import 'dart:ui_web' as ui_web;
 
 import 'package:flutter/material.dart';
 
+/// Tempos centralizados (reload web, spinner, esperas de buffer).
+const _kWebPageShowReloadDelay = Duration(milliseconds: 420);
+const _kWebCanPlayTimeout = Duration(seconds: 10);
+const _kWebPlayStartTimeout = Duration(seconds: 12);
+const _kWebLiveSpinnerMin = Duration(milliseconds: 280);
+const _kWebSkipSeekAfterLiveReload = Duration(seconds: 4);
+
 html.AudioElement? _webBibleFmAudio;
+
+/// URL base do stream (sem cache-bust) — entrada em **direct** em cada reload.
+String? _webLiveStreamBaseUrl;
 
 /// Subscrição única: primeiro gesto após falha de autoplay (política do browser).
 StreamSubscription? _webAutoplayUnlockSub;
@@ -31,26 +41,35 @@ void _ensureReloadAutoplayHook() {
     final persisted =
         e is html.PageTransitionEvent && e.persisted == true;
 
-    void tryPlayAfterLoad() {
+    void tryEnterDirectMode() {
+      final base = _webLiveStreamBaseUrl;
+      if (base != null) {
+        unawaited(
+          bibleFmWebReloadLiveStream(base).catchError((Object? _) {}),
+        );
+        return;
+      }
       try {
         el.load();
       } catch (_) {}
-      unawaited(el.play().catchError((Object? _) {}));
+      unawaited(
+        _webPlayWithAutoplayPolicy(el).catchError((Object? _) {}),
+      );
     }
 
     if (persisted) {
       // Voltar com a página em cache do browser: nova ligação ao fluxo.
-      tryPlayAfterLoad();
+      tryEnterDirectMode();
       return;
     }
 
     // Reload completo (F5): o bootstrap já correu; se ainda em pausa, volta a tentar
     // quando o `<audio>` estiver estável no DOM.
     unawaited(
-      Future<void>.delayed(const Duration(milliseconds: 420), () {
+      Future<void>.delayed(_kWebPageShowReloadDelay, () {
         final current = _webBibleFmAudio;
         if (current == null || !current.paused) return;
-        tryPlayAfterLoad();
+        tryEnterDirectMode();
       }),
     );
   });
@@ -92,9 +111,9 @@ void _syncWebMediaSessionPlaybackState(html.AudioElement a) {
   } catch (_) {}
 }
 
-/// Autoplay com [HTMLMediaElement.play](https://html.spec.whatwg.org/#dom-media-play);
-/// se falhar (NotAllowedError), o primeiro [pointerdown] ou [click] desbloqueia — padrão recomendado.
-Future<void> _bootstrapWebPlayback(html.AudioElement a) async {
+/// Arranque sempre em **direct** ([bibleFmWebReloadLiveStream]: cache-bust + [bibleFmWebLiveEdgeActive]).
+/// Se o browser bloquear o [play], o primeiro [click] na janela repete o mesmo fluxo.
+Future<void> _bootstrapWebPlayback(html.AudioElement a, String streamBaseUrl) async {
   _installWebMediaSession(a);
   _syncWebMediaSessionPlaybackState(a);
 
@@ -104,24 +123,21 @@ Future<void> _bootstrapWebPlayback(html.AudioElement a) async {
     _cancelWebAutoplayUnlock();
   });
 
-  // Deixa o platform view estabelecer o nó no DOM antes do primeiro play().
   await Future<void>.microtask(() {});
 
-  try {
-    a.load();
-    await a.play();
-    return;
-  } catch (_) {
-    _cancelWebAutoplayUnlock();
-    void unlock(html.Event event) {
-      _cancelWebAutoplayUnlock();
-      unawaited(a.play().catchError((Object? error) {}));
-    }
+  await bibleFmWebReloadLiveStream(streamBaseUrl);
 
-    // `click` e `keydown` são gestos válidos para desbloquear autoplay; `pointerdown`
-    // não está exposto em todos os alvos em dart:html — usar janela.
-    _webAutoplayUnlockSub = html.window.onClick.listen(unlock);
+  if (!a.paused) return;
+
+  _cancelWebAutoplayUnlock();
+  void unlock(html.Event _) {
+    _cancelWebAutoplayUnlock();
+    unawaited(
+      bibleFmWebReloadLiveStream(streamBaseUrl).catchError((Object? _) {}),
+    );
   }
+
+  _webAutoplayUnlockSub = html.window.onClick.listen(unlock);
 }
 
 /// `true` enquanto o `<audio>` está a reproduzir (para opacidade do botão «live» na web).
@@ -136,7 +152,7 @@ final bibleFmWebLiveEdgeActive = ValueNotifier<bool>(false);
 /// `waiting` no `<audio>` (feedback no título).
 final bibleFmWebBuffering = ValueNotifier<bool>(false);
 
-/// `true` após o primeiro play (distigue pausa de «ainda não iniciou»).
+/// `true` após o primeiro play (distingue pausa de «ainda não iniciou»).
 final bibleFmWebSessionEverStarted = ValueNotifier<bool>(false);
 
 DateTime? _webPlayingSince;
@@ -266,10 +282,9 @@ void _webApplyLiveElapsedJumpFromPausedWallClock() {
 }
 
 Future<void> _webEnsureMinLiveSpinnerShown(DateTime started) async {
-  const minShow = Duration(milliseconds: 280);
   final elapsed = DateTime.now().difference(started);
-  if (elapsed < minShow) {
-    await Future<void>.delayed(minShow - elapsed);
+  if (elapsed < _kWebLiveSpinnerMin) {
+    await Future<void>.delayed(_kWebLiveSpinnerMin - elapsed);
   }
 }
 
@@ -280,9 +295,39 @@ Future<void> _webAwaitPlayActuallyStarted(html.AudioElement el) async {
     return;
   }
   try {
-    await el.onPlay.first.timeout(const Duration(seconds: 12));
+    await el.onPlay.first.timeout(_kWebPlayStartTimeout);
   } on TimeoutException {
     // Mantém coerência com o finally (spinner + edge).
+  }
+}
+
+/// [play] com política de autoplay: sem gesto, browsers rejeitam som; **muted** costuma ser permitido.
+/// Se o buffer ainda não está pronto após [load], repete após [canplay].
+Future<void> _webPlayWithAutoplayPolicy(html.AudioElement el) async {
+  Future<void> attemptPlay() async {
+    try {
+      await el.play();
+      if (!el.paused) return;
+    } catch (_) {}
+
+    final wasMuted = el.muted;
+    try {
+      el.muted = true;
+      await el.play();
+    } finally {
+      el.muted = wasMuted;
+    }
+  }
+
+  await attemptPlay();
+  if (el.paused) {
+    try {
+      await el.onCanPlay.first.timeout(_kWebCanPlayTimeout);
+    } on TimeoutException {
+      return;
+    }
+    if (!el.paused) return;
+    await attemptPlay();
   }
 }
 
@@ -301,9 +346,10 @@ Future<void> bibleFmWebReloadLiveStream(String baseUrl) async {
     uri = uri.replace(queryParameters: q);
     el.src = uri.toString();
     el.load();
-    _webSkipSeekCoalesceUntil = DateTime.now().add(const Duration(seconds: 4));
+    _webSkipSeekCoalesceUntil =
+        DateTime.now().add(_kWebSkipSeekAfterLiveReload);
     try {
-      await el.play();
+      await _webPlayWithAutoplayPolicy(el);
       await _webAwaitPlayActuallyStarted(el);
       bibleFmWebLiveEdgeActive.value = !el.paused;
       _syncWebMediaSessionPlaybackState(el);
@@ -364,6 +410,7 @@ class _WebNativeAudioControlsState extends State<WebNativeAudioControls> {
         ..style.boxSizing = 'border-box'
         ..append(a);
       _webBibleFmAudio = a;
+      _webLiveStreamBaseUrl = url;
       _ensureReloadAutoplayHook();
       a.onPlay.listen((_) => _onWebAudioPlay(a));
       a.onPause.listen((_) => _onWebAudioPauseOrEnd(a));
@@ -389,7 +436,7 @@ class _WebNativeAudioControlsState extends State<WebNativeAudioControls> {
       a.onLoadedMetadata.listen((_) => _syncNativeAudioElapsedDisplay());
       _syncWebPlaybackNotifierFrom(a);
       _syncNativeAudioElapsedDisplay();
-      unawaited(_bootstrapWebPlayback(a));
+      unawaited(_bootstrapWebPlayback(a, url));
       return wrap;
     });
   }
