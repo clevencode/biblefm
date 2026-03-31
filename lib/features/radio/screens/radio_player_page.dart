@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:meu_app/core/strings/bible_fm_strings.dart';
 import 'package:meu_app/core/theme/app_theme.dart';
 import 'package:meu_app/features/radio/radio_stream_config.dart';
@@ -318,7 +319,7 @@ class _WebLiveStreamButton extends StatelessWidget {
                   brightness,
                 ).withValues(alpha: brightness == Brightness.dark ? 0.95 : 1.0)
                 : AppTheme.liveStreamDiscRing(brightness);
-        final ringWidth = isPaused ? 1.8 : 1.0;
+        final ringWidth = 1.0;
 
         String semanticsLabel;
         String tooltipMsg;
@@ -408,6 +409,8 @@ class _WebSleepTimerButton extends StatefulWidget {
   State<_WebSleepTimerButton> createState() => _WebSleepTimerButtonState();
 }
 
+enum _SleepInputUnit { hour, minute }
+
 class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
   Timer? _ticker;
   DateTime? _endAt;
@@ -438,6 +441,11 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
   }
 
   void _onTick() {
+    if (!mounted) {
+      _ticker?.cancel();
+      _ticker = null;
+      return;
+    }
     final remaining = _remainingSec;
     if (remaining == null) return;
     if (remaining == 0) {
@@ -445,12 +453,14 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
       bibleFmWebPausePlayback();
       return;
     }
-    if (mounted) setState(() {});
+    setState(() {});
   }
 
   void _startSleepTimer(int minutes) {
+    if (minutes <= 0) return;
     _ticker?.cancel();
     _endAt = DateTime.now().add(Duration(minutes: minutes));
+    if (!mounted) return;
     setState(() {});
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) => _onTick());
   }
@@ -458,61 +468,128 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
   String _labelFromRemaining() {
     final remaining = _remainingSec;
     if (remaining == null) return '';
-    final mins = remaining ~/ 60;
+    final hours = remaining ~/ 3600;
+    final mins = (remaining % 3600) ~/ 60;
     final secs = remaining % 60;
+    final hh = hours.toString().padLeft(2, '0');
     final mm = mins.toString().padLeft(2, '0');
     final ss = secs.toString().padLeft(2, '0');
-    return '$mm:$ss';
+    return '$hh:$mm:$ss';
   }
 
-  Future<int?> _pickCustomMinutes() async {
-    final controller = TextEditingController(text: '90');
-    return showDialog<int>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Minuteur personnalisé'),
-          content: TextField(
-            controller: controller,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: 'Minutes',
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Annuler'),
-            ),
-            TextButton(
-              onPressed: () {
-                final raw = int.tryParse(controller.text.trim());
-                if (raw == null || raw <= 0) {
-                  Navigator.of(context).pop();
-                } else {
-                  Navigator.of(context).pop(raw);
-                }
-              },
-              child: const Text('OK'),
-            ),
-          ],
-        );
-      },
+  Future<void> _openSleepConfigurator() async {
+    final hasTimer = _endAt != null;
+    final inputController = TextEditingController(
+      text: hasTimer ? '' : '30',
     );
-  }
+    var unit = _SleepInputUnit.minute;
+    bool canApply() {
+      final raw = int.tryParse(inputController.text.trim()) ?? 0;
+      return raw > 0;
+    }
 
-  Future<void> _handleSelected(int value) async {
-    if (value == 0) {
-      _cancelSleepTimer();
-      return;
+    try {
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: true,
+        builder: (dialogContext) {
+          final scheme = Theme.of(dialogContext).colorScheme;
+          final screenW = MediaQuery.sizeOf(dialogContext).width;
+          final targetW = (screenW - 48).clamp(280.0, 560.0).toDouble();
+          return Align(
+            // Alinha no mesmo eixo vertical da cápsula de audio control (efeito de sobreposição).
+            alignment: const Alignment(0, 0.12),
+            child: Dialog(
+              insetPadding: const EdgeInsets.symmetric(horizontal: 20),
+              backgroundColor: Colors.transparent,
+              child: StatefulBuilder(
+                builder: (context, setLocalState) {
+                  final valid = canApply();
+                  return SizedBox(
+                    width: targetW,
+                    height: 52,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: scheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: scheme.outlineVariant.withValues(alpha: 0.7),
+                          width: 1,
+                        ),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 6,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.max,
+                          children: [
+                            _SleepUnitChip(
+                              label: 'Heure',
+                              selected: unit == _SleepInputUnit.hour,
+                              onTap: () => setLocalState(
+                                () => unit = _SleepInputUnit.hour,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            _SleepUnitChip(
+                              label: 'Minute',
+                              selected: unit == _SleepInputUnit.minute,
+                              onTap: () => setLocalState(
+                                () => unit = _SleepInputUnit.minute,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _SleepChipField(
+                                width: 180,
+                                hintText: 'Digitar tempo',
+                                label: 'Digitar tempo',
+                                controller: inputController,
+                                autofocus: !hasTimer,
+                                onChanged: (_) => setLocalState(() {}),
+                                onSubmitted: (_) {
+                                  if (hasTimer || !canApply()) return;
+                                  final raw =
+                                      int.tryParse(inputController.text.trim()) ?? 0;
+                                  final minutes = unit == _SleepInputUnit.hour
+                                      ? raw * 60
+                                      : raw;
+                                  _startSleepTimer(minutes);
+                                  Navigator.of(dialogContext).pop();
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            _SleepActionButton(
+                              cancelMode: false,
+                              enabled: valid,
+                              onTap: () {
+                                final raw =
+                                    int.tryParse(inputController.text.trim()) ?? 0;
+                                if (raw <= 0) return;
+                                final minutes = unit == _SleepInputUnit.hour
+                                    ? raw * 60
+                                    : raw;
+                                _startSleepTimer(minutes);
+                                Navigator.of(dialogContext).pop();
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          );
+        },
+      );
+    } finally {
+      inputController.dispose();
     }
-    if (value == -1) {
-      final custom = await _pickCustomMinutes();
-      if (custom == null || custom <= 0) return;
-      _startSleepTimer(custom);
-      return;
-    }
-    _startSleepTimer(value);
   }
 
   @override
@@ -530,21 +607,9 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
       child: Tooltip(
         message: hasTimer ? _labelFromRemaining() : kBibleFmWebFrSleepTooltip,
         waitDuration: const Duration(milliseconds: 280),
-        child: PopupMenuButton<int>(
-          tooltip: kBibleFmWebFrSleepTooltip,
-          onSelected: (value) {
-            // Ignoramos o Future; o menu fecha de qualquer forma.
-            _handleSelected(value);
-          },
-          itemBuilder: (context) => const [
-            PopupMenuItem(value: 15, child: Text('15 min')),
-            PopupMenuItem(value: 30, child: Text('30 min')),
-            PopupMenuItem(value: 45, child: Text('45 min')),
-            PopupMenuItem(value: 60, child: Text('60 min')),
-            PopupMenuItem(value: -1, child: Text('Personnalisé…')),
-            PopupMenuDivider(),
-            PopupMenuItem(value: 0, child: Text(kBibleFmWebFrSleepOff)),
-          ],
+        child: InkWell(
+          onTap: () => unawaited(_openSleepConfigurator()),
+          borderRadius: BorderRadius.circular(17),
           child: Container(
             height: 34,
             padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -566,10 +631,159 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
                       fontWeight: FontWeight.w600,
                     ),
                   ),
+                  const SizedBox(width: 4),
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _cancelSleepTimer,
+                    child: Icon(
+                      Icons.close_rounded,
+                      size: 15,
+                      color: fg.withValues(alpha: 0.9),
+                    ),
+                  ),
                 ],
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SleepUnitChip extends StatelessWidget {
+  const _SleepUnitChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Ink(
+        height: 40,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: selected
+              ? scheme.surface.withValues(alpha: 0.85)
+              : scheme.surface.withValues(alpha: 0.55),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: scheme.outline.withValues(alpha: selected ? 0.85 : 0.65),
+          ),
+        ),
+        child: Center(
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SleepChipField extends StatelessWidget {
+  const _SleepChipField({
+    required this.width,
+    this.hintText,
+    this.label,
+    required this.controller,
+    this.autofocus = false,
+    this.onChanged,
+    this.onSubmitted,
+  });
+
+  final double width;
+  // Mantido para compatibilidade com hot reload após refactor.
+  final String? hintText;
+  // Campo legado mantido para evitar "Const class cannot remove fields".
+  final String? label;
+  final TextEditingController controller;
+  final bool autofocus;
+  final ValueChanged<String>? onChanged;
+  final ValueChanged<String>? onSubmitted;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      width: width,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: scheme.surface.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: scheme.outline.withValues(alpha: 0.7)),
+        ),
+        child: TextField(
+          controller: controller,
+          autofocus: autofocus,
+          textAlign: TextAlign.center,
+          keyboardType: TextInputType.number,
+          inputFormatters: [
+            FilteringTextInputFormatter.digitsOnly,
+            LengthLimitingTextInputFormatter(4),
+          ],
+          onChanged: onChanged,
+          onSubmitted: onSubmitted,
+          decoration: InputDecoration(
+            hintText: hintText ?? label ?? '',
+            isDense: true,
+            border: InputBorder.none,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 10,
+              vertical: 12,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SleepActionButton extends StatelessWidget {
+  const _SleepActionButton({
+    required this.cancelMode,
+    this.enabled = true,
+    required this.onTap,
+  });
+
+  final bool cancelMode;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: enabled ? onTap : null,
+      borderRadius: BorderRadius.circular(20),
+      child: Ink(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: scheme.outline.withValues(alpha: enabled ? 0.9 : 0.45),
+            width: 1.2,
+          ),
+        ),
+        child: Icon(
+          cancelMode ? Icons.close_rounded : Icons.check_rounded,
+          size: 26,
+          color: enabled
+              ? scheme.onSurface
+              : scheme.onSurface.withValues(alpha: 0.45),
         ),
       ),
     );
