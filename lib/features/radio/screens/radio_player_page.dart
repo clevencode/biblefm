@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
@@ -10,7 +11,10 @@ import 'package:meu_app/features/radio/widgets/broadcast_signal_icon.dart';
 import 'package:meu_app/features/radio/widgets/web_native_audio.dart';
 
 /// Ancora visual: barra do temporizador alinha logo abaixo desta cápsula.
-final GlobalKey _kWebTransportCapsule = GlobalKey(debugLabel: 'webTransportCapsule');
+final GlobalKey _kWebTransportCapsule = GlobalKey(
+  debugLabel: 'webTransportCapsule',
+);
+
 /// Referência ao botão de sleep para acionar o mesmo fluxo do clique.
 final GlobalKey<_WebSleepTimerButtonState> _kWebSleepTimerButtonKey =
     GlobalKey<_WebSleepTimerButtonState>(debugLabel: 'webSleepTimerButton');
@@ -64,9 +68,7 @@ class RadioPlayerPage extends StatelessWidget {
                 ),
               ),
             ),
-            SafeArea(
-              child: _WebPlayerScrollBridge(brightness: brightness),
-            ),
+            SafeArea(child: _WebPlayerScrollBridge(brightness: brightness)),
           ],
         ),
       ),
@@ -87,19 +89,125 @@ class _WebPlayerScrollBridge extends StatefulWidget {
 class _WebPlayerScrollBridgeState extends State<_WebPlayerScrollBridge> {
   late final ScrollController _verticalScroll = ScrollController();
   late final ScrollController _horizontalScroll = ScrollController();
+  final GlobalKey _measureKey = GlobalKey(debugLabel: 'webPlayerMeasure');
+  BoxConstraints? _lastScheduledConstraints;
+  bool _useScrollLayout = false;
 
   @override
   void initState() {
     super.initState();
     bibleFmWebAttachScrollBridge(_verticalScroll, _horizontalScroll);
+    _verticalScroll.addListener(_onScrollControllersChanged);
+    _horizontalScroll.addListener(_onScrollControllersChanged);
   }
 
   @override
   void dispose() {
+    _verticalScroll.removeListener(_onScrollControllersChanged);
+    _horizontalScroll.removeListener(_onScrollControllersChanged);
     bibleFmWebDetachScrollBridge();
     _verticalScroll.dispose();
     _horizontalScroll.dispose();
     super.dispose();
+  }
+
+  void _onScrollControllersChanged() {
+    if (!_useScrollLayout || !mounted) return;
+    if (!_verticalScroll.hasClients || !_horizontalScroll.hasClients) return;
+    final v = _verticalScroll.position.maxScrollExtent;
+    final h = _horizontalScroll.position.maxScrollExtent;
+    if (v <= 0.5 && h <= 0.5) {
+      setState(() {
+        _useScrollLayout = false;
+        _lastScheduledConstraints = null;
+      });
+    }
+  }
+
+  void _onLayoutTick(BoxConstraints constraints) {
+    if (!mounted || _useScrollLayout) return;
+    final box =
+        _measureKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return;
+    final needsScroll = box.size.height > constraints.maxHeight + 0.5;
+    if (needsScroll) {
+      setState(() {
+        _useScrollLayout = true;
+        _lastScheduledConstraints = null;
+      });
+    }
+  }
+
+  void _scheduleOverflowCheck(BoxConstraints constraints) {
+    if (_lastScheduledConstraints == constraints) return;
+    _lastScheduledConstraints = constraints;
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _onLayoutTick(constraints));
+  }
+
+  Widget _transportColumn({
+    required Brightness brightness,
+    required double innerH,
+    required double webCapsuleH,
+    required double webPadH,
+    required double webPadV,
+    required double webLiveDiameter,
+    required double webAudioH,
+  }) {
+    return Column(
+      key: _measureKey,
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const _WebRealtimeFeedbackLine(),
+        const SizedBox(height: 16),
+        DecoratedBox(
+          key: _kWebTransportCapsule,
+          decoration: BoxDecoration(
+            color: AppTheme.transportCapsuleTrack(brightness),
+            borderRadius: BorderRadius.circular(webCapsuleH / 2),
+            border: Border.all(
+              color: AppTheme.transportCapsuleOutline(brightness),
+              width: 1,
+            ),
+          ),
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(webPadH, webPadV, webPadH, webPadV),
+            child: SizedBox(
+              height: innerH,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  _WebLiveStreamButton(diameter: webLiveDiameter),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: WebNativeAudioControls(
+                      streamUrl: kBibleFmLiveStreamUrl,
+                      controlsHeight: webAudioH,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _WebSleepTimerButton(key: _kWebSleepTimerButtonKey),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _sleepSwipeWrapper({required Widget child}) {
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onVerticalDragEnd: (details) {
+        final vy = details.velocity.pixelsPerSecond.dy;
+        if (vy > 180) {
+          _kWebSleepTimerButtonKey.currentState?.openFromScreenSwipe();
+        }
+      },
+      child: child,
+    );
   }
 
   @override
@@ -112,8 +220,34 @@ class _WebPlayerScrollBridgeState extends State<_WebPlayerScrollBridge> {
     final innerH = webCapsuleH - 2 * webPadV;
     final brightness = widget.brightness;
 
+    final column = _transportColumn(
+      brightness: brightness,
+      innerH: innerH,
+      webCapsuleH: webCapsuleH,
+      webPadH: webPadH,
+      webPadV: webPadV,
+      webLiveDiameter: webLiveDiameter,
+      webAudioH: webAudioH,
+    );
+
     return LayoutBuilder(
       builder: (context, constraints) {
+        _scheduleOverflowCheck(constraints);
+
+        final paddedColumn = Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: column,
+          ),
+        );
+
+        if (!_useScrollLayout) {
+          return _sleepSwipeWrapper(
+            child: Center(child: paddedColumn),
+          );
+        }
+
         return Scrollbar(
           thumbVisibility: true,
           notificationPredicate: (ScrollNotification n) =>
@@ -137,82 +271,20 @@ class _WebPlayerScrollBridgeState extends State<_WebPlayerScrollBridge> {
                     minWidth: constraints.maxWidth,
                     minHeight: constraints.maxHeight,
                   ),
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.translucent,
-                    onVerticalDragEnd: (details) {
-                      final vy = details.velocity.pixelsPerSecond.dy;
-                      if (vy > 180) {
-                        _kWebSleepTimerButtonKey.currentState
-                            ?.openFromScreenSwipe();
-                      }
-                    },
-                    child: Center(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 8,
-                        ),
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 560),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              const _WebRealtimeFeedbackLine(),
-                              const SizedBox(height: 16),
-                              DecoratedBox(
-                                key: _kWebTransportCapsule,
-                                decoration: BoxDecoration(
-                                  color: AppTheme.transportCapsuleTrack(
-                                    brightness,
-                                  ),
-                                  borderRadius: BorderRadius.circular(
-                                    webCapsuleH / 2,
-                                  ),
-                                  border: Border.all(
-                                    color: AppTheme.transportCapsuleOutline(
-                                      brightness,
-                                    ),
-                                    width: 1,
-                                  ),
-                                ),
-                                child: Padding(
-                                  padding: const EdgeInsets.fromLTRB(
-                                    webPadH,
-                                    webPadV,
-                                    webPadH,
-                                    webPadV,
-                                  ),
-                                  child: SizedBox(
-                                    height: innerH,
-                                    child: Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.center,
-                                      children: [
-                                        const _WebLiveStreamButton(
-                                          diameter: webLiveDiameter,
-                                        ),
-                                        const SizedBox(width: 10),
-                                        Expanded(
-                                          child: WebNativeAudioControls(
-                                            streamUrl: kBibleFmLiveStreamUrl,
-                                            controlsHeight: webAudioH,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        _WebSleepTimerButton(
-                                          key: _kWebSleepTimerButtonKey,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    alignment: Alignment.center,
+                    children: [
+                      Positioned.fill(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.translucent,
+                          onTap: bibleFmWebBackgroundTapPlayPause,
+                          onLongPress: bibleFmWebBackgroundLongPressGoLive,
+                          child: const SizedBox.expand(),
                         ),
                       ),
-                    ),
+                      _sleepSwipeWrapper(child: paddedColumn),
+                    ],
                   ),
                 ),
               ),
@@ -397,15 +469,14 @@ class _WebLiveStreamButton extends StatelessWidget {
         final isLive = playing && atLiveEdge;
         final isListening = playing && !atLiveEdge;
         final canTap = !reloading && !isLive;
-        final discFill =
-            isLive || reloading
-                ? AppTheme.liveStreamDiscFill(brightness)
-                : isListening
-                ? AppTheme.liveStreamDiscFill(brightness).withValues(alpha: 0.5)
-                : Colors.transparent;
-        final ringColor = AppTheme.transportLiveBorder(brightness).withValues(
-          alpha: playing || reloading ? 0.65 : 0.45,
-        );
+        final discFill = isLive || reloading
+            ? AppTheme.liveStreamDiscFill(brightness)
+            : isListening
+            ? AppTheme.liveStreamDiscFill(brightness).withValues(alpha: 0.5)
+            : Colors.transparent;
+        final ringColor = AppTheme.transportLiveBorder(
+          brightness,
+        ).withValues(alpha: playing || reloading ? 0.65 : 0.45);
 
         String semanticsLabel;
         String tooltipMsg;
@@ -442,10 +513,7 @@ class _WebLiveStreamButton extends StatelessWidget {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: discFill,
-              border: Border.all(
-                color: ringColor,
-                width: 1,
-              ),
+              border: Border.all(color: ringColor, width: 1),
             ),
             child: Center(
               child: reloading
@@ -593,14 +661,16 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
       bibleFmWebSetSleepConfiguratorOpen(true);
       const gapBelowTransport = 12.0;
       const minScreenPad = 16.0;
+
       /// Reserva vertical para manter a pílula visível (altura intrínseca ~64–88).
       const sleepBarViewportReserve = 92.0;
 
       await showGeneralDialog<void>(
         context: context,
         barrierDismissible: true,
-        barrierLabel:
-            MaterialLocalizations.of(context).modalBarrierDismissLabel,
+        barrierLabel: MaterialLocalizations.of(
+          context,
+        ).modalBarrierDismissLabel,
         barrierColor: Colors.transparent,
         transitionDuration: const Duration(milliseconds: 180),
         pageBuilder: (dialogContext, animation, secondaryAnimation) {
@@ -621,11 +691,10 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
             top = origin.dy + capsuleBox.size.height + gapBelowTransport;
             left = origin.dx + (capsuleBox.size.width - targetW) / 2;
             left = left.clamp(minScreenPad, screenW - targetW - minScreenPad);
-            final maxTop = (screenSize.height -
-                    sleepBarViewportReserve -
-                    minScreenPad)
-                .clamp(minScreenPad, double.infinity)
-                .toDouble();
+            final maxTop =
+                (screenSize.height - sleepBarViewportReserve - minScreenPad)
+                    .clamp(minScreenPad, double.infinity)
+                    .toDouble();
             top = top.clamp(minScreenPad, maxTop);
           } else {
             top = screenSize.height * 0.42;
@@ -638,18 +707,17 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
             Navigator.of(dialogContext).pop();
           }
 
+          final viewInsets = MediaQuery.viewInsetsOf(dialogContext);
+          /// Mesmo padrão que a página do leitor: scroll V/H + Scrollbars quando há overflow.
+          const sleepPillMinH = 100.0;
+
           // Sem Theme() extra: evita outro InheritedWidget durante o pop.
           return Stack(
             clipBehavior: Clip.none,
             children: [
-              // Véu em ecrã inteiro: desfoca o fundo + toque fecha.
+              // Véu: só visual (IgnorePointer) — toque para fechar fica na camada de scroll.
               Positioned.fill(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () {
-                    FocusManager.instance.primaryFocus?.unfocus();
-                    Navigator.of(dialogContext).pop();
-                  },
+                child: IgnorePointer(
                   child: ClipRect(
                     child: BackdropFilter(
                       filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
@@ -660,49 +728,133 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
                   ),
                 ),
               ),
-              Positioned(
-                top: top,
-                left: left,
-                width: targetW,
-                child: Material(
-                  type: MaterialType.transparency,
-                  child: StatefulBuilder(
-                    builder: (context, setLocalState) {
-                      final valid = canApply();
-                      return ClipRRect(
-                        borderRadius: BorderRadius.circular(999),
-                        child: DecoratedBox(
-                          decoration: const BoxDecoration(
-                            color: Colors.transparent,
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(8, 6, 6, 6),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                Expanded(
-                                  child: _SleepHmUnderlineFields(
-                                    hoursController: hoursController,
-                                    minutesController: minutesController,
-                                    hoursFocus: hoursFocus,
-                                    minutesFocus: minutesFocus,
-                                    onChanged: () => setLocalState(() {}),
-                                    onHoursSubmitted: () =>
-                                        minutesFocus.requestFocus(),
-                                    onMinutesSubmitted: applyAndClose,
-                                  ),
+              Positioned.fill(
+                child: Padding(
+                  padding: EdgeInsets.only(bottom: viewInsets.bottom),
+                  child: LayoutBuilder(
+                    builder: (context, c) {
+                      final viewportW = c.maxWidth;
+                      final viewportH = c.maxHeight;
+                      final contentW = math.max(
+                        viewportW,
+                        left + targetW + minScreenPad * 2,
+                      );
+                      final contentH = math.max(
+                        viewportH,
+                        top + sleepPillMinH + minScreenPad,
+                      );
+
+                      return Scrollbar(
+                        thumbVisibility: true,
+                        notificationPredicate: (ScrollNotification n) =>
+                            n.metrics.axis == Axis.vertical,
+                        child: SingleChildScrollView(
+                          physics: const ClampingScrollPhysics(),
+                          child: Scrollbar(
+                            thumbVisibility: true,
+                            notificationPredicate: (ScrollNotification n) =>
+                                n.metrics.axis == Axis.horizontal,
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              physics: const ClampingScrollPhysics(),
+                              child: SizedBox(
+                                width: contentW,
+                                height: contentH,
+                                child: Stack(
+                                  clipBehavior: Clip.none,
+                                  children: [
+                                    Positioned.fill(
+                                      child: GestureDetector(
+                                        behavior:
+                                            HitTestBehavior.translucent,
+                                        onTap: () {
+                                          FocusManager.instance.primaryFocus
+                                              ?.unfocus();
+                                          Navigator.of(dialogContext).pop();
+                                        },
+                                        child: const SizedBox.expand(),
+                                      ),
+                                    ),
+                                    Positioned(
+                                      left: left,
+                                      top: top,
+                                      width: targetW,
+                                      child: Material(
+                                        type: MaterialType.transparency,
+                                        child: StatefulBuilder(
+                                          builder: (context, setLocalState) {
+                                            final valid = canApply();
+                                            return ClipRRect(
+                                              borderRadius:
+                                                  BorderRadius.circular(999),
+                                              child: DecoratedBox(
+                                                decoration:
+                                                    const BoxDecoration(
+                                                  color: Colors.transparent,
+                                                ),
+                                                child: Padding(
+                                                  padding:
+                                                      const EdgeInsets.fromLTRB(
+                                                    8,
+                                                    6,
+                                                    6,
+                                                    6,
+                                                  ),
+                                                  child: Row(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .center,
+                                                    children: [
+                                                      Expanded(
+                                                        child:
+                                                            _SleepHmUnderlineFields(
+                                                          hoursController:
+                                                              hoursController,
+                                                          minutesController:
+                                                              minutesController,
+                                                          hoursFocus:
+                                                              hoursFocus,
+                                                          minutesFocus:
+                                                              minutesFocus,
+                                                          onChanged: () =>
+                                                              setLocalState(
+                                                                  () {}),
+                                                          onHoursSubmitted:
+                                                              () =>
+                                                                  minutesFocus
+                                                                      .requestFocus(),
+                                                          onMinutesSubmitted:
+                                                              applyAndClose,
+                                                        ),
+                                                      ),
+                                                      const SizedBox(
+                                                          width: 2),
+                                                      _SleepActionButton(
+                                                        cancelMode: false,
+                                                        enabled: valid,
+                                                        onTap: () {
+                                                          if (!canApply()) {
+                                                            return;
+                                                          }
+                                                          _startSleepTimer(
+                                                              totalMinutesFromFields());
+                                                          Navigator.of(
+                                                                  dialogContext)
+                                                              .pop();
+                                                        },
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                const SizedBox(width: 2),
-                                _SleepActionButton(
-                                  cancelMode: false,
-                                  enabled: valid,
-                                  onTap: () {
-                                    if (!canApply()) return;
-                                    _startSleepTimer(totalMinutesFromFields());
-                                    Navigator.of(dialogContext).pop();
-                                  },
-                                ),
-                              ],
+                              ),
                             ),
                           ),
                         ),
@@ -738,9 +890,9 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
   Widget build(BuildContext context) {
     final hasTimer = _endAt != null;
     final brightness = Theme.of(context).brightness;
-    final ring = AppTheme.transportLiveBorder(brightness).withValues(
-      alpha: hasTimer ? 0.65 : 0.45,
-    );
+    final ring = AppTheme.transportLiveBorder(
+      brightness,
+    ).withValues(alpha: hasTimer ? 0.65 : 0.45);
 
     return Semantics(
       button: true,
@@ -770,9 +922,9 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
                   Text(
                     _labelFromRemaining(),
                     style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                          color: Colors.black,
-                          fontWeight: FontWeight.w600,
-                        ),
+                      color: Colors.black,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   const SizedBox(width: 4),
                   GestureDetector(
@@ -921,8 +1073,7 @@ class _SleepHmUnderlineFieldsState extends State<_SleepHmUnderlineFields> {
     final isDark = scheme.brightness == Brightness.dark;
     // Escuro sobre fundo preto/carvão: cinzas claros para contraste alto (sem contorno na pílula).
     final ink = isDark ? const Color(0xFFFAFAFA) : scheme.onSurface;
-    final inkMuted =
-        isDark ? const Color(0xFFE4E4E7) : scheme.onSurfaceVariant;
+    final inkMuted = isDark ? const Color(0xFFE4E4E7) : scheme.onSurfaceVariant;
     const digitSize = 19.0;
     final digitInactive = TextStyle(
       color: ink,
@@ -930,17 +1081,17 @@ class _SleepHmUnderlineFieldsState extends State<_SleepHmUnderlineFields> {
       fontSize: digitSize,
       height: 1.0,
     );
-    final digitActive =
-        digitInactive.copyWith(fontWeight: FontWeight.w800);
+    final digitActive = digitInactive.copyWith(fontWeight: FontWeight.w800);
     final colonStyle = digitInactive.copyWith(fontWeight: FontWeight.w600);
 
     final labelMuted = Theme.of(context).textTheme.labelSmall?.copyWith(
-          color: isDark ? inkMuted : inkMuted.withValues(alpha: 0.88),
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.5,
-          height: 1.0,
-        );
-    final labelStrong = labelMuted?.copyWith(fontWeight: FontWeight.w800) ??
+      color: isDark ? inkMuted : inkMuted.withValues(alpha: 0.88),
+      fontWeight: FontWeight.w600,
+      letterSpacing: 0.5,
+      height: 1.0,
+    );
+    final labelStrong =
+        labelMuted?.copyWith(fontWeight: FontWeight.w800) ??
         const TextStyle(fontWeight: FontWeight.w800);
 
     final barStrong = isDark
@@ -1029,14 +1180,16 @@ class _SleepHmUnderlineFieldsState extends State<_SleepHmUnderlineFields> {
                   final raw = int.tryParse(v);
                   if (raw != null && raw > 59) {
                     const fixed = '59';
-                    widget.minutesController.value =
-                        widget.minutesController.value.copyWith(
-                      text: fixed,
-                      selection: const TextSelection.collapsed(
-                        offset: fixed.length,
-                      ),
-                      composing: TextRange.empty,
-                    );
+                    widget.minutesController.value = widget
+                        .minutesController
+                        .value
+                        .copyWith(
+                          text: fixed,
+                          selection: const TextSelection.collapsed(
+                            offset: fixed.length,
+                          ),
+                          composing: TextRange.empty,
+                        );
                   }
                   widget.onChanged();
                 },
@@ -1112,8 +1265,7 @@ class _SleepHmUnderlineFieldsState extends State<_SleepHmUnderlineFields> {
                           ),
                           child: Text(
                             kBibleFmWebFrSleepLabelMinute,
-                            style:
-                                minutesFocused ? labelStrong : labelMuted,
+                            style: minutesFocused ? labelStrong : labelMuted,
                           ),
                         ),
                       ),
