@@ -112,6 +112,8 @@ class RadioPlayerPage extends StatelessWidget {
                                       controlsHeight: webAudioH,
                                     ),
                                   ),
+                                  const SizedBox(width: 8),
+                                  const _WebSleepTimerButton(),
                                 ],
                               ),
                             ),
@@ -395,6 +397,181 @@ class _WebLiveStreamButton extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _WebSleepTimerButton extends StatefulWidget {
+  const _WebSleepTimerButton();
+
+  @override
+  State<_WebSleepTimerButton> createState() => _WebSleepTimerButtonState();
+}
+
+class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
+  Timer? _ticker;
+  DateTime? _endAt;
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  int? get _remainingSec {
+    final end = _endAt;
+    if (end == null) return null;
+    final diff = end.difference(DateTime.now()).inSeconds;
+    return diff > 0 ? diff : 0;
+  }
+
+  void _cancelSleepTimer() {
+    _ticker?.cancel();
+    _ticker = null;
+    if (mounted) {
+      setState(() {
+        _endAt = null;
+      });
+    } else {
+      _endAt = null;
+    }
+  }
+
+  void _onTick() {
+    final remaining = _remainingSec;
+    if (remaining == null) return;
+    if (remaining == 0) {
+      _cancelSleepTimer();
+      bibleFmWebPausePlayback();
+      return;
+    }
+    if (mounted) setState(() {});
+  }
+
+  void _startSleepTimer(int minutes) {
+    _ticker?.cancel();
+    _endAt = DateTime.now().add(Duration(minutes: minutes));
+    setState(() {});
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) => _onTick());
+  }
+
+  String _labelFromRemaining() {
+    final remaining = _remainingSec;
+    if (remaining == null) return '';
+    final mins = remaining ~/ 60;
+    final secs = remaining % 60;
+    final mm = mins.toString().padLeft(2, '0');
+    final ss = secs.toString().padLeft(2, '0');
+    return '$mm:$ss';
+  }
+
+  Future<int?> _pickCustomMinutes() async {
+    final controller = TextEditingController(text: '90');
+    return showDialog<int>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Minuteur personnalisé'),
+          content: TextField(
+            controller: controller,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Minutes',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Annuler'),
+            ),
+            TextButton(
+              onPressed: () {
+                final raw = int.tryParse(controller.text.trim());
+                if (raw == null || raw <= 0) {
+                  Navigator.of(context).pop();
+                } else {
+                  Navigator.of(context).pop(raw);
+                }
+              },
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _handleSelected(int value) async {
+    if (value == 0) {
+      _cancelSleepTimer();
+      return;
+    }
+    if (value == -1) {
+      final custom = await _pickCustomMinutes();
+      if (custom == null || custom <= 0) return;
+      _startSleepTimer(custom);
+      return;
+    }
+    _startSleepTimer(value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasTimer = _endAt != null;
+    final brightness = Theme.of(context).brightness;
+    final fg = Theme.of(context).colorScheme.onSurfaceVariant;
+    final ring = AppTheme.transportLiveBorder(brightness).withValues(
+      alpha: hasTimer ? 0.65 : 0.45,
+    );
+
+    return Semantics(
+      button: true,
+      label: kBibleFmWebFrSleepA11y,
+      child: Tooltip(
+        message: hasTimer ? _labelFromRemaining() : kBibleFmWebFrSleepTooltip,
+        waitDuration: const Duration(milliseconds: 280),
+        child: PopupMenuButton<int>(
+          tooltip: kBibleFmWebFrSleepTooltip,
+          onSelected: (value) {
+            // Ignoramos o Future; o menu fecha de qualquer forma.
+            _handleSelected(value);
+          },
+          itemBuilder: (context) => const [
+            PopupMenuItem(value: 15, child: Text('15 min')),
+            PopupMenuItem(value: 30, child: Text('30 min')),
+            PopupMenuItem(value: 45, child: Text('45 min')),
+            PopupMenuItem(value: 60, child: Text('60 min')),
+            PopupMenuItem(value: -1, child: Text('Personnalisé…')),
+            PopupMenuDivider(),
+            PopupMenuItem(value: 0, child: Text(kBibleFmWebFrSleepOff)),
+          ],
+          child: Container(
+            height: 34,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(17),
+              border: Border.all(color: ring, width: 1),
+              color: hasTimer ? fg.withValues(alpha: 0.1) : Colors.transparent,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.bedtime_outlined, size: 17, color: fg),
+                if (hasTimer) ...[
+                  const SizedBox(width: 4),
+                  Text(
+                    _labelFromRemaining(),
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: fg,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

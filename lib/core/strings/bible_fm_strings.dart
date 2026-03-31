@@ -25,3 +25,8 @@ const String kBibleFmWebFrLiveTooltipPauseToEnable =
 /// A11y zone fond : tap = lecture/pause ; long press = direct (aligné bouton live).
 const String kBibleFmWebFrBackgroundGestureA11y =
     'Fond d’écran : touche rapide lecture ou pause ; appui prolongé aller au direct';
+
+// --- Web: sleep timer ---
+const String kBibleFmWebFrSleepA11y = 'Minuteur de sommeil';
+const String kBibleFmWebFrSleepTooltip = 'Arrêter la lecture après…';
+const String kBibleFmWebFrSleepOff = 'Minuteur désactivé';

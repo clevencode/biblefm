@@ -7,6 +7,9 @@ Future<void> bibleFmWebReloadLiveStream(String baseUrl) async {}
 void bibleFmWebBackgroundTapPlayPause() {}
 
 /// Fora da web: sem-op.
+void bibleFmWebPausePlayback() {}
+
+/// Fora da web: sem-op.
 void bibleFmWebBackgroundLongPressGoLive() {}
 
 /// Fora de `dart:html` mantém-se em false (testes / análise VM).

@@ -73,6 +73,15 @@ void bibleFmWebBackgroundTapPlayPause() {
   }
 }
 
+/// Pausa directa do `<audio>` (usado por sleep timer).
+void bibleFmWebPausePlayback() {
+  final el = _webBibleFmAudio;
+  if (el == null) return;
+  try {
+    el.pause();
+  } catch (_) {}
+}
+
 /// **Appui long** no fundo: [bibleFmWebReloadLiveStream] — mesmas regras que o botão live
 /// (inactif si déjà direct en lecture).
 void bibleFmWebBackgroundLongPressGoLive() {
