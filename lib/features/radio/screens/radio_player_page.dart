@@ -28,7 +28,18 @@ class RadioPlayerPage extends StatelessWidget {
         body: Stack(
           fit: StackFit.expand,
           children: [
-            const _PageBackground(),
+            Semantics(
+              button: true,
+              label: kBibleFmWebFrBackgroundGestureA11y,
+              onTap: bibleFmWebBackgroundTapPlayPause,
+              onLongPress: bibleFmWebBackgroundLongPressGoLive,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: bibleFmWebBackgroundTapPlayPause,
+                onLongPress: bibleFmWebBackgroundLongPressGoLive,
+                child: const _PageBackground(),
+              ),
+            ),
             SafeArea(
               child: Center(
                 child: Padding(

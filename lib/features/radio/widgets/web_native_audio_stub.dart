@@ -3,6 +3,12 @@ import 'package:flutter/material.dart';
 /// Sem elemento HTML fora da web.
 Future<void> bibleFmWebReloadLiveStream(String baseUrl) async {}
 
+/// Fora da web: sem-op.
+void bibleFmWebBackgroundTapPlayPause() {}
+
+/// Fora da web: sem-op.
+void bibleFmWebBackgroundLongPressGoLive() {}
+
 /// Fora de `dart:html` mantém-se em false (testes / análise VM).
 final bibleFmWebPlaybackActive = ValueNotifier<bool>(false);
 

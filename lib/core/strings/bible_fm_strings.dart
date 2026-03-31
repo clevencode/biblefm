@@ -22,3 +22,6 @@ const String kBibleFmWebFrLiveA11yPauseToEnable =
     'Direct : mettre la lecture en pause pour activer';
 const String kBibleFmWebFrLiveTooltipPauseToEnable =
     'Mettre en pause pour pouvoir aller au direct';
+/// A11y zone fond : tap = lecture/pause ; long press = direct (aligné bouton live).
+const String kBibleFmWebFrBackgroundGestureA11y =
+    'Fond d’écran : touche rapide lecture ou pause ; appui prolongé aller au direct';
