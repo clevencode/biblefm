@@ -10,6 +10,18 @@ void bibleFmWebBackgroundTapPlayPause() {}
 void bibleFmWebPausePlayback() {}
 
 /// Fora da web: sem-op.
+void bibleFmWebSetSleepConfiguratorOpen(bool open) {}
+
+/// Fora da web: sem-op.
+void bibleFmWebAttachScrollBridge(
+  ScrollController? vertical,
+  ScrollController? horizontal,
+) {}
+
+/// Fora da web: sem-op.
+void bibleFmWebDetachScrollBridge() {}
+
+/// Fora da web: sem-op.
 void bibleFmWebBackgroundLongPressGoLive() {}
 
 /// Fora de `dart:html` mantém-se em false (testes / análise VM).

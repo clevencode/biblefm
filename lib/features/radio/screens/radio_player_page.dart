@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -21,12 +22,6 @@ class RadioPlayerPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final brightness = Theme.of(context).brightness;
-    const webCapsuleH = 52.0;
-    const webPadH = 8.0;
-    const webPadV = 5.0;
-    const webLiveDiameter = 42.0;
-    const webAudioH = 40.0;
-    final innerH = webCapsuleH - 2 * webPadV;
     final scheme = Theme.of(context).colorScheme;
     return Semantics(
       container: true,
@@ -70,82 +65,161 @@ class RadioPlayerPage extends StatelessWidget {
               ),
             ),
             SafeArea(
-              // Deslize rápido para baixo em qualquer ponto desta zona (tela útil)
-              // abre o temporizador — mesmo fluxo do botão.
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onVerticalDragEnd: (details) {
-                  final vy = details.velocity.pixelsPerSecond.dy;
-                  if (vy > 180) {
-                    _kWebSleepTimerButtonKey.currentState
-                        ?.openFromScreenSwipe();
-                  }
-                },
-                child: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 560),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          const _WebRealtimeFeedbackLine(),
-                          const SizedBox(height: 16),
-                          DecoratedBox(
-                            key: _kWebTransportCapsule,
-                            decoration: BoxDecoration(
-                              color: AppTheme.transportCapsuleTrack(brightness),
-                              borderRadius: BorderRadius.circular(
-                                webCapsuleH / 2,
-                              ),
-                              border: Border.all(
-                                color:
-                                    AppTheme.transportCapsuleOutline(brightness),
-                                width: 1,
-                              ),
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.fromLTRB(
-                                webPadH,
-                                webPadV,
-                                webPadH,
-                                webPadV,
-                              ),
-                              child: SizedBox(
-                                height: innerH,
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                  children: [
-                                    const _WebLiveStreamButton(
-                                      diameter: webLiveDiameter,
+              child: _WebPlayerScrollBridge(brightness: brightness),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Scroll duplo + registo dos controladores para a roda sobre o `<audio>` (Web).
+class _WebPlayerScrollBridge extends StatefulWidget {
+  const _WebPlayerScrollBridge({required this.brightness});
+
+  final Brightness brightness;
+
+  @override
+  State<_WebPlayerScrollBridge> createState() => _WebPlayerScrollBridgeState();
+}
+
+class _WebPlayerScrollBridgeState extends State<_WebPlayerScrollBridge> {
+  late final ScrollController _verticalScroll = ScrollController();
+  late final ScrollController _horizontalScroll = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    bibleFmWebAttachScrollBridge(_verticalScroll, _horizontalScroll);
+  }
+
+  @override
+  void dispose() {
+    bibleFmWebDetachScrollBridge();
+    _verticalScroll.dispose();
+    _horizontalScroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const webCapsuleH = 52.0;
+    const webPadH = 8.0;
+    const webPadV = 5.0;
+    const webLiveDiameter = 42.0;
+    const webAudioH = 40.0;
+    final innerH = webCapsuleH - 2 * webPadV;
+    final brightness = widget.brightness;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Scrollbar(
+          thumbVisibility: true,
+          notificationPredicate: (ScrollNotification n) =>
+              n.metrics.axis == Axis.vertical,
+          controller: _verticalScroll,
+          child: SingleChildScrollView(
+            controller: _verticalScroll,
+            scrollDirection: Axis.vertical,
+            physics: const ClampingScrollPhysics(),
+            child: Scrollbar(
+              thumbVisibility: true,
+              notificationPredicate: (ScrollNotification n) =>
+                  n.metrics.axis == Axis.horizontal,
+              controller: _horizontalScroll,
+              child: SingleChildScrollView(
+                controller: _horizontalScroll,
+                scrollDirection: Axis.horizontal,
+                physics: const ClampingScrollPhysics(),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minWidth: constraints.maxWidth,
+                    minHeight: constraints.maxHeight,
+                  ),
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onVerticalDragEnd: (details) {
+                      final vy = details.velocity.pixelsPerSecond.dy;
+                      if (vy > 180) {
+                        _kWebSleepTimerButtonKey.currentState
+                            ?.openFromScreenSwipe();
+                      }
+                    },
+                    child: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 8,
+                        ),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 560),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              const _WebRealtimeFeedbackLine(),
+                              const SizedBox(height: 16),
+                              DecoratedBox(
+                                key: _kWebTransportCapsule,
+                                decoration: BoxDecoration(
+                                  color: AppTheme.transportCapsuleTrack(
+                                    brightness,
+                                  ),
+                                  borderRadius: BorderRadius.circular(
+                                    webCapsuleH / 2,
+                                  ),
+                                  border: Border.all(
+                                    color: AppTheme.transportCapsuleOutline(
+                                      brightness,
                                     ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: WebNativeAudioControls(
-                                        streamUrl: kBibleFmLiveStreamUrl,
-                                        controlsHeight: webAudioH,
-                                      ),
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    webPadH,
+                                    webPadV,
+                                    webPadH,
+                                    webPadV,
+                                  ),
+                                  child: SizedBox(
+                                    height: innerH,
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.center,
+                                      children: [
+                                        const _WebLiveStreamButton(
+                                          diameter: webLiveDiameter,
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: WebNativeAudioControls(
+                                            streamUrl: kBibleFmLiveStreamUrl,
+                                            controlsHeight: webAudioH,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        _WebSleepTimerButton(
+                                          key: _kWebSleepTimerButtonKey,
+                                        ),
+                                      ],
                                     ),
-                                    const SizedBox(width: 8),
-                                    _WebSleepTimerButton(
-                                      key: _kWebSleepTimerButtonKey,
-                                    ),
-                                  ],
+                                  ),
                                 ),
                               ),
-                            ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }
@@ -516,6 +590,7 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
     bool canApply() => totalMinutesFromFields() > 0;
 
     try {
+      bibleFmWebSetSleepConfiguratorOpen(true);
       const gapBelowTransport = 12.0;
       const minScreenPad = 16.0;
       /// Reserva vertical para manter a pílula visível (altura intrínseca ~64–88).
@@ -563,56 +638,60 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
             Navigator.of(dialogContext).pop();
           }
 
-          return Theme(
-            data: Theme.of(dialogContext),
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                // Véu em ecrã inteiro: toque fecha (o barrier do dialog fica por baixo e não recebe o hit).
-                Positioned.fill(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () {
-                      FocusManager.instance.primaryFocus?.unfocus();
-                      Navigator.of(dialogContext).pop();
-                    },
-                    child: ColoredBox(
-                      color: scheme.scrim.withValues(alpha: barrierAlpha),
+          // Sem Theme() extra: evita outro InheritedWidget durante o pop.
+          return Stack(
+            clipBehavior: Clip.none,
+            children: [
+              // Véu em ecrã inteiro: desfoca o fundo + toque fecha.
+              Positioned.fill(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {
+                    FocusManager.instance.primaryFocus?.unfocus();
+                    Navigator.of(dialogContext).pop();
+                  },
+                  child: ClipRect(
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                      child: ColoredBox(
+                        color: scheme.scrim.withValues(alpha: barrierAlpha),
+                      ),
                     ),
                   ),
                 ),
-                Positioned(
-                  top: top,
-                  left: left,
-                  width: targetW,
-                  child: Material(
-                    type: MaterialType.transparency,
-                    child: StatefulBuilder(
-                      builder: (context, setLocalState) {
-                        final valid = canApply();
-                        return ClipRRect(
-                          borderRadius: BorderRadius.circular(999),
-                          child: DecoratedBox(
-                            decoration: const BoxDecoration(
-                              color: Colors.transparent,
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.fromLTRB(8, 6, 6, 6),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  Expanded(
-                                    child: _SleepHmUnderlineFields(
-                                      hoursController: hoursController,
-                                      minutesController: minutesController,
-                                      hoursFocus: hoursFocus,
-                                      minutesFocus: minutesFocus,
-                                      onChanged: () => setLocalState(() {}),
-                                      onHoursSubmitted: () =>
-                                          minutesFocus.requestFocus(),
-                                      onMinutesSubmitted: applyAndClose,
-                                    ),
+              ),
+              Positioned(
+                top: top,
+                left: left,
+                width: targetW,
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: StatefulBuilder(
+                    builder: (context, setLocalState) {
+                      final valid = canApply();
+                      return ClipRRect(
+                        borderRadius: BorderRadius.circular(999),
+                        child: DecoratedBox(
+                          decoration: const BoxDecoration(
+                            color: Colors.transparent,
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(8, 6, 6, 6),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Expanded(
+                                  child: _SleepHmUnderlineFields(
+                                    hoursController: hoursController,
+                                    minutesController: minutesController,
+                                    hoursFocus: hoursFocus,
+                                    minutesFocus: minutesFocus,
+                                    onChanged: () => setLocalState(() {}),
+                                    onHoursSubmitted: () =>
+                                        minutesFocus.requestFocus(),
+                                    onMinutesSubmitted: applyAndClose,
                                   ),
+                                ),
                                 const SizedBox(width: 2),
                                 _SleepActionButton(
                                   cancelMode: false,
@@ -632,17 +711,26 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
                   ),
                 ),
               ),
-              ],
-            ),
+            ],
           );
         },
       );
     } finally {
-      hoursController.dispose();
-      minutesController.dispose();
-      hoursFocus.dispose();
-      minutesFocus.dispose();
+      bibleFmWebSetSleepConfiguratorOpen(false);
       _sleepConfiguratorOpen = false;
+      final hc = hoursController;
+      final mc = minutesController;
+      final hf = hoursFocus;
+      final mf = minutesFocus;
+      // Adia dispose até a rota desmontar : dispose síncrono no `finally`
+      // pode libertar Focus/TextField antes do fim do deactivate e falhar
+      // `'_dependents.isEmpty': is not true`.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        hc.dispose();
+        mc.dispose();
+        hf.dispose();
+        mf.dispose();
+      });
     }
   }
 

@@ -15,8 +15,80 @@ const _kWebSkipSeekAfterLiveReload = Duration(seconds: 4);
 
 html.AudioElement? _webBibleFmAudio;
 
+/// Contentor do `HtmlElementView` dos controlos nativos (para ocultar sob véu/modal web).
+html.DivElement? _webAudioControlsWrap;
+
 /// URL base do fluxo (registada com o `<audio>`) — appui long no fundo e botão live.
 String? _webLiveStreamBaseUrl;
+
+/// Enquanto o configurador de sono está aberto: esconde a barra nativa que, no Flutter Web,
+/// compõe por cima do Canvas e parece «solta» do resto da cápsula. O áudio continua.
+void bibleFmWebSetSleepConfiguratorOpen(bool open) {
+  final w = _webAudioControlsWrap;
+  if (w == null) return;
+  if (open) {
+    w.style.opacity = '0';
+    w.style.pointerEvents = 'none';
+  } else {
+    w.style.opacity = '';
+    w.style.pointerEvents = '';
+  }
+}
+
+ScrollController? _webScrollVertical;
+ScrollController? _webScrollHorizontal;
+
+/// Liga a roda do rato sobre o `<audio>` aos [SingleChildScrollView] Flutter (Web).
+void bibleFmWebAttachScrollBridge(
+  ScrollController? vertical,
+  ScrollController? horizontal,
+) {
+  _webScrollVertical = vertical;
+  _webScrollHorizontal = horizontal;
+}
+
+void bibleFmWebDetachScrollBridge() {
+  _webScrollVertical = null;
+  _webScrollHorizontal = null;
+}
+
+double _wheelDeltaScale(html.WheelEvent e) {
+  if (e.deltaMode == 1) return 16.0;
+  if (e.deltaMode == 2) {
+    return html.window.innerHeight?.toDouble() ?? 600.0;
+  }
+  return 1.0;
+}
+
+bool _relayWheelToController(ScrollController? c, double delta) {
+  if (c == null || !c.hasClients) return false;
+  final p = c.position;
+  if (p.maxScrollExtent <= p.minScrollExtent) return false;
+  final next =
+      (p.pixels + delta).clamp(p.minScrollExtent, p.maxScrollExtent);
+  if (next == p.pixels) return false;
+  c.jumpTo(next);
+  return true;
+}
+
+void _installWheelRelayOnAudioWrap(html.DivElement wrap) {
+  wrap.onWheel.listen((html.WheelEvent e) {
+    final scale = _wheelDeltaScale(e);
+    var dy = e.deltaY.toDouble() * scale;
+    var dx = e.deltaX.toDouble() * scale;
+    if (e.shiftKey && dx.abs() < 0.01 && dy.abs() > 0.01) {
+      dx = dy;
+      dy = 0;
+    }
+    final preferHorizontal = dx.abs() > dy.abs() && dx.abs() > 0.01;
+    final consumed = preferHorizontal
+        ? _relayWheelToController(_webScrollHorizontal, dx)
+        : (dy.abs() > 0.01 && _relayWheelToController(_webScrollVertical, dy));
+    if (consumed) {
+      e.preventDefault();
+    }
+  });
+}
 
 /// [Media Session](https://w3c.github.io/mediasession/): centro de média do SO, teclas físicas, notificação.
 void _installWebMediaSession(html.AudioElement a) {
@@ -366,7 +438,11 @@ class _WebNativeAudioControlsState extends State<WebNativeAudioControls> {
         ..style.width = '100%'
         ..style.height = '100%'
         ..style.boxSizing = 'border-box'
+        ..style.overflow = 'hidden'
+        ..style.borderRadius = '10px'
         ..append(a);
+      _webAudioControlsWrap = wrap;
+      _installWheelRelayOnAudioWrap(wrap);
       _webBibleFmAudio = a;
       _webLiveStreamBaseUrl = url;
       a.onPlay.listen((_) => _onWebAudioPlay(a));
