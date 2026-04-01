@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -193,7 +194,10 @@ class _WebPlayerScrollBridgeState extends State<_WebPlayerScrollBridge> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  _WebSleepTimerButton(key: _kWebSleepTimerButtonKey),
+                  _WebSleepTimerButton(
+                    key: _kWebSleepTimerButtonKey,
+                    controlHeight: innerH,
+                  ),
                 ],
               ),
             ),
@@ -203,12 +207,16 @@ class _WebPlayerScrollBridgeState extends State<_WebPlayerScrollBridge> {
     );
   }
 
-  Widget _sleepSwipeWrapper({required Widget child}) {
+  Widget _sleepSwipeWrapper({
+    required Widget child,
+    required bool compactLayout,
+  }) {
+    final swipeVy = compactLayout ? 130.0 : 180.0;
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onVerticalDragEnd: (details) {
         final vy = details.velocity.pixelsPerSecond.dy;
-        if (vy > 180) {
+        if (vy > swipeVy) {
           _kWebSleepTimerButtonKey.currentState?.openFromScreenSwipe();
         }
       },
@@ -218,42 +226,53 @@ class _WebPlayerScrollBridgeState extends State<_WebPlayerScrollBridge> {
 
   @override
   Widget build(BuildContext context) {
-    const webCapsuleH = 52.0;
-    const webPadH = 8.0;
-    const webPadV = 5.0;
-    const webLiveDiameter = 42.0;
-    const webAudioH = 40.0;
-    final innerH = webCapsuleH - 2 * webPadV;
     final brightness = widget.brightness;
-
-    final column = _transportColumn(
-      brightness: brightness,
-      innerH: innerH,
-      webCapsuleH: webCapsuleH,
-      webPadH: webPadH,
-      webPadV: webPadV,
-      webLiveDiameter: webLiveDiameter,
-      webAudioH: webAudioH,
-    );
 
     return LayoutBuilder(
       builder: (context, constraints) {
         _scheduleOverflowCheck(constraints);
 
+        final layoutW = constraints.maxWidth;
+        // Largura típica de telemóvel em portrait: cápsula mais alta e alvos de toque ≥ 44 px.
+        final compact = layoutW < 440;
+        final hPad = compact ? 12.0 : 24.0;
+        final vPad = compact ? 6.0 : 8.0;
+        final webCapsuleH = compact ? 56.0 : 52.0;
+        final webPadH = compact ? 6.0 : 8.0;
+        final webPadV = compact ? 6.0 : 5.0;
+        final webLiveDiameter = compact ? 48.0 : 44.0;
+        final webAudioH = compact ? 48.0 : 40.0;
+        final innerH = webCapsuleH - 2 * webPadV;
+
+        final column = _transportColumn(
+          brightness: brightness,
+          innerH: innerH,
+          webCapsuleH: webCapsuleH,
+          webPadH: webPadH,
+          webPadV: webPadV,
+          webLiveDiameter: webLiveDiameter,
+          webAudioH: webAudioH,
+        );
+
         final paddedColumn = Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+          padding: EdgeInsets.symmetric(horizontal: hPad, vertical: vPad),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 560),
             child: column,
           ),
         );
 
+        final showScrollbars = !compact;
+
         if (!_useScrollLayout) {
-          return _sleepSwipeWrapper(child: Center(child: paddedColumn));
+          return _sleepSwipeWrapper(
+            compactLayout: compact,
+            child: Center(child: paddedColumn),
+          );
         }
 
         return Scrollbar(
-          thumbVisibility: true,
+          thumbVisibility: showScrollbars,
           notificationPredicate: (ScrollNotification n) =>
               n.metrics.axis == Axis.vertical,
           controller: _verticalScroll,
@@ -262,7 +281,7 @@ class _WebPlayerScrollBridgeState extends State<_WebPlayerScrollBridge> {
             scrollDirection: Axis.vertical,
             physics: const ClampingScrollPhysics(),
             child: Scrollbar(
-              thumbVisibility: true,
+              thumbVisibility: showScrollbars,
               notificationPredicate: (ScrollNotification n) =>
                   n.metrics.axis == Axis.horizontal,
               controller: _horizontalScroll,
@@ -287,7 +306,10 @@ class _WebPlayerScrollBridgeState extends State<_WebPlayerScrollBridge> {
                           child: const SizedBox.expand(),
                         ),
                       ),
-                      _sleepSwipeWrapper(child: paddedColumn),
+                      _sleepSwipeWrapper(
+                        compactLayout: compact,
+                        child: paddedColumn,
+                      ),
                     ],
                   ),
                 ),
@@ -433,9 +455,10 @@ class _WebRealtimeFeedbackLine extends StatelessWidget {
                     textAlign: TextAlign.center,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(
-                      context,
-                    ).textTheme.titleLarge?.copyWith(color: color),
+                    style: (MediaQuery.sizeOf(context).width < 360
+                            ? Theme.of(context).textTheme.titleMedium
+                            : Theme.of(context).textTheme.titleLarge)
+                        ?.copyWith(color: color),
                   ),
                 ),
               ),
@@ -561,7 +584,10 @@ class _WebLiveStreamButton extends StatelessWidget {
 }
 
 class _WebSleepTimerButton extends StatefulWidget {
-  const _WebSleepTimerButton({super.key});
+  const _WebSleepTimerButton({super.key, this.controlHeight = 34});
+
+  /// Alinhado à altura útil da cápsula (toque mais confortável no mobile web).
+  final double controlHeight;
 
   @override
   State<_WebSleepTimerButton> createState() => _WebSleepTimerButtonState();
@@ -664,7 +690,6 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
     try {
       bibleFmWebSetSleepConfiguratorOpen(true);
       const gapBelowTransport = 12.0;
-      const minScreenPad = 16.0;
 
       /// Reserva vertical para manter a pílula visível (altura intrínseca ~64–88).
       const sleepBarViewportReserve = 92.0;
@@ -683,8 +708,13 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
           // Sem blur: véu só a escurecer (mais opaco que o antigo com desfoque).
           final barrierAlpha = brightness == Brightness.dark ? 0.80 : 0.38;
           final screenSize = MediaQuery.sizeOf(dialogContext);
+          final safe = MediaQuery.paddingOf(dialogContext);
+          final minScreenPad = math.max(16.0, math.max(safe.left, safe.right));
           final screenW = screenSize.width;
-          final targetW = (screenW - 48).clamp(280.0, 560.0).toDouble();
+          final horizontalGutter =
+              math.max(48.0, safe.left + safe.right + 24.0);
+          final targetW =
+              (screenW - horizontalGutter).clamp(280.0, 560.0).toDouble();
 
           final capsuleBox =
               _kWebTransportCapsule.currentContext?.findRenderObject()
@@ -695,15 +725,24 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
             final origin = capsuleBox.localToGlobal(Offset.zero);
             top = origin.dy + capsuleBox.size.height + gapBelowTransport;
             left = origin.dx + (capsuleBox.size.width - targetW) / 2;
-            left = left.clamp(minScreenPad, screenW - targetW - minScreenPad);
-            final maxTop =
-                (screenSize.height - sleepBarViewportReserve - minScreenPad)
-                    .clamp(minScreenPad, double.infinity)
-                    .toDouble();
-            top = top.clamp(minScreenPad, maxTop);
+            left = left.clamp(
+              safe.left + 8.0,
+              screenW - targetW - safe.right - 8.0,
+            );
+            final maxTop = (screenSize.height -
+                    sleepBarViewportReserve -
+                    minScreenPad -
+                    safe.bottom)
+                .clamp(safe.top + 8.0, double.infinity)
+                .toDouble();
+            top = top.clamp(safe.top + 8.0, maxTop);
           } else {
             top = screenSize.height * 0.42;
             left = (screenW - targetW) / 2;
+            left = left.clamp(
+              safe.left + 8.0,
+              screenW - targetW - safe.right - 8.0,
+            );
           }
 
           void applyAndClose() {
@@ -849,6 +888,12 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
     final ring = AppTheme.transportLiveBorder(
       brightness,
     ).withValues(alpha: hasTimer ? 0.65 : 0.45);
+    final h = widget.controlHeight;
+    final radius = h / 2;
+    final padH = (h * 0.28).clamp(8.0, 14.0);
+    final iconMain = (h * 0.45).clamp(16.0, 22.0);
+    final iconClose = (h * 0.4).clamp(14.0, 18.0);
+    final gapSm = (h * 0.1).clamp(3.0, 6.0);
 
     return Semantics(
       button: true,
@@ -858,12 +903,12 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
         waitDuration: const Duration(milliseconds: 280),
         child: InkWell(
           onTap: _openFromButtonIntent,
-          borderRadius: BorderRadius.circular(17),
+          borderRadius: BorderRadius.circular(radius),
           child: Container(
-            height: 34,
-            padding: const EdgeInsets.symmetric(horizontal: 10),
+            height: h,
+            padding: EdgeInsets.symmetric(horizontal: padH),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(17),
+              borderRadius: BorderRadius.circular(radius),
               border: Border.all(color: ring, width: 1),
               color: hasTimer
                   ? AppTheme.liveStreamDiscFill(brightness)
@@ -872,9 +917,9 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.timer_outlined, size: 17, color: Colors.black),
+                Icon(Icons.timer_outlined, size: iconMain, color: Colors.black),
                 if (hasTimer) ...[
-                  const SizedBox(width: 4),
+                  SizedBox(width: gapSm),
                   Text(
                     _labelFromRemaining(),
                     style: Theme.of(context).textTheme.labelMedium?.copyWith(
@@ -882,13 +927,13 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  const SizedBox(width: 4),
+                  SizedBox(width: gapSm),
                   GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: _cancelSleepTimer,
-                    child: const Icon(
+                    child: Icon(
                       Icons.close_rounded,
-                      size: 15,
+                      size: iconClose,
                       color: Colors.black,
                     ),
                   ),

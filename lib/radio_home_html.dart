@@ -2,8 +2,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:meu_app/features/radio/screens/radio_player_page.dart'
     deferred as radio;
 
-// Mesmas cores que [AppTheme.darkAppBackground] / boot HTML — evita importar Material/AppTheme neste módulo.
-const Color _kLoaderBackground = Color(0xFF09090B);
+// Alinhado ao fundo preto do [index.html] / manifest — evita importar Material/AppTheme.
+const Color _kLoaderBackground = Color(0xFF000000);
 const Color _kLoaderErrorFg = Color(0xFFE4E4E7);
 
 /// Web: o leitor corre num **módulo diferido** para menos parse/CPU no arranque
@@ -26,8 +26,7 @@ class _DeferredRadioHostState extends State<_DeferredRadioHost> {
     super.initState();
     radio.loadLibrary().then((_) {
       if (mounted) setState(() => _ready = true);
-    }).catchError((Object e, StackTrace st) {
-      debugPrint('radio_home_html: loadLibrary failed: $e\n$st');
+    }).catchError((Object e, StackTrace _) {
       if (mounted) setState(() => _error = e);
     });
   }
