@@ -704,6 +704,32 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
             Navigator.of(dialogContext).pop();
           }
 
+          void dismissOnly() {
+            FocusManager.instance.primaryFocus?.unfocus();
+            Navigator.of(dialogContext).pop();
+          }
+
+          /// Toque simples no véu: só retira o foco dos dígitos (teclado / cursor).
+          void onVeilSingleTap() {
+            FocusManager.instance.primaryFocus?.unfocus();
+          }
+
+          /// Duplo toque no véu: valida e fecha se a duração for válida.
+          void onVeilDoubleTap() {
+            FocusManager.instance.primaryFocus?.unfocus();
+            if (!canApply()) return;
+            _startSleepTimer(totalMinutesFromFields());
+            Navigator.of(dialogContext).pop();
+          }
+
+          /// Deslize rápido para cima: fecha sem aplicar (igual limiar do gesto sleep na página).
+          void onSwipeUpClose(DragEndDetails details) {
+            final vy = details.velocity.pixelsPerSecond.dy;
+            if (vy < -180) {
+              dismissOnly();
+            }
+          }
+
           // Sem Theme() extra: evita outro InheritedWidget durante o pop.
           return Stack(
             clipBehavior: Clip.none,
@@ -715,10 +741,9 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
                   minutesFocus: minutesFocus,
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onTap: () {
-                      FocusManager.instance.primaryFocus?.unfocus();
-                      Navigator.of(dialogContext).pop();
-                    },
+                    onTap: onVeilSingleTap,
+                    onDoubleTap: onVeilDoubleTap,
+                    onVerticalDragEnd: onSwipeUpClose,
                     child: ColoredBox(
                       color: scheme.scrim.withValues(alpha: barrierAlpha),
                     ),
@@ -734,44 +759,48 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
                   child: StatefulBuilder(
                     builder: (context, setLocalState) {
                       final valid = canApply();
-                      return ClipRRect(
-                        borderRadius: BorderRadius.circular(999),
-                        child: DecoratedBox(
-                          decoration: const BoxDecoration(
-                            color: Colors.transparent,
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(8, 6, 6, 6),
-                            child: _SleepHmSwipeBand(
-                              hoursFocus: hoursFocus,
-                              minutesFocus: minutesFocus,
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  Expanded(
-                                    child: _SleepHmUnderlineFields(
-                                      hoursController: hoursController,
-                                      minutesController: minutesController,
-                                      hoursFocus: hoursFocus,
-                                      minutesFocus: minutesFocus,
-                                      onChanged: () => setLocalState(() {}),
-                                      onHoursSubmitted: () =>
-                                          minutesFocus.requestFocus(),
-                                      onMinutesSubmitted: applyAndClose,
+                      return GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onVerticalDragEnd: onSwipeUpClose,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(999),
+                          child: DecoratedBox(
+                            decoration: const BoxDecoration(
+                              color: Colors.transparent,
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(8, 6, 6, 6),
+                              child: _SleepHmSwipeBand(
+                                hoursFocus: hoursFocus,
+                                minutesFocus: minutesFocus,
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    Expanded(
+                                      child: _SleepHmUnderlineFields(
+                                        hoursController: hoursController,
+                                        minutesController: minutesController,
+                                        hoursFocus: hoursFocus,
+                                        minutesFocus: minutesFocus,
+                                        onChanged: () => setLocalState(() {}),
+                                        onHoursSubmitted: () =>
+                                            minutesFocus.requestFocus(),
+                                        onMinutesSubmitted: applyAndClose,
+                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(width: 2),
-                                  _SleepActionButton(
-                                    cancelMode: false,
-                                    enabled: valid,
-                                    onTap: () {
-                                      if (!canApply()) return;
-                                      _startSleepTimer(
-                                          totalMinutesFromFields());
-                                      Navigator.of(dialogContext).pop();
-                                    },
-                                  ),
-                                ],
+                                    const SizedBox(width: 2),
+                                    _SleepActionButton(
+                                      cancelMode: false,
+                                      enabled: valid,
+                                      onTap: () {
+                                        if (!canApply()) return;
+                                        _startSleepTimer(
+                                            totalMinutesFromFields());
+                                        Navigator.of(dialogContext).pop();
+                                      },
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
