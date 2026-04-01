@@ -709,14 +709,19 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
             clipBehavior: Clip.none,
             children: [
               Positioned.fill(
-                child: GestureDetector(
+                child: _SleepHmSwipeBand(
                   behavior: HitTestBehavior.opaque,
-                  onTap: () {
-                    FocusManager.instance.primaryFocus?.unfocus();
-                    Navigator.of(dialogContext).pop();
-                  },
-                  child: ColoredBox(
-                    color: scheme.scrim.withValues(alpha: barrierAlpha),
+                  hoursFocus: hoursFocus,
+                  minutesFocus: minutesFocus,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () {
+                      FocusManager.instance.primaryFocus?.unfocus();
+                      Navigator.of(dialogContext).pop();
+                    },
+                    child: ColoredBox(
+                      color: scheme.scrim.withValues(alpha: barrierAlpha),
+                    ),
                   ),
                 ),
               ),
@@ -737,32 +742,37 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
                           ),
                           child: Padding(
                             padding: const EdgeInsets.fromLTRB(8, 6, 6, 6),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                Expanded(
-                                  child: _SleepHmUnderlineFields(
-                                    hoursController: hoursController,
-                                    minutesController: minutesController,
-                                    hoursFocus: hoursFocus,
-                                    minutesFocus: minutesFocus,
-                                    onChanged: () => setLocalState(() {}),
-                                    onHoursSubmitted: () =>
-                                        minutesFocus.requestFocus(),
-                                    onMinutesSubmitted: applyAndClose,
+                            child: _SleepHmSwipeBand(
+                              hoursFocus: hoursFocus,
+                              minutesFocus: minutesFocus,
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  Expanded(
+                                    child: _SleepHmUnderlineFields(
+                                      hoursController: hoursController,
+                                      minutesController: minutesController,
+                                      hoursFocus: hoursFocus,
+                                      minutesFocus: minutesFocus,
+                                      onChanged: () => setLocalState(() {}),
+                                      onHoursSubmitted: () =>
+                                          minutesFocus.requestFocus(),
+                                      onMinutesSubmitted: applyAndClose,
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(width: 2),
-                                _SleepActionButton(
-                                  cancelMode: false,
-                                  enabled: valid,
-                                  onTap: () {
-                                    if (!canApply()) return;
-                                    _startSleepTimer(totalMinutesFromFields());
-                                    Navigator.of(dialogContext).pop();
-                                  },
-                                ),
-                              ],
+                                  const SizedBox(width: 2),
+                                  _SleepActionButton(
+                                    cancelMode: false,
+                                    enabled: valid,
+                                    onTap: () {
+                                      if (!canApply()) return;
+                                      _startSleepTimer(
+                                          totalMinutesFromFields());
+                                      Navigator.of(dialogContext).pop();
+                                    },
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
@@ -854,17 +864,45 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
   }
 }
 
-/// Zone ligne + H/M : swipe horizontal pour basculer le focus (évite le conflit avec les TextField).
+/// Swipe horizontal : droite / fling positif → minute, gauche → heure (véu ou pílula).
+void _sleepHmApplyHorizontalSwipe({
+  required double velocityX,
+  required double dragDx,
+  required FocusNode hoursFocus,
+  required FocusNode minutesFocus,
+}) {
+  const minDist = 28.0;
+  const minVel = 140.0;
+  final useVel = velocityX.abs() >= minVel;
+  if (useVel) {
+    if (velocityX > 0) {
+      minutesFocus.requestFocus();
+    } else {
+      hoursFocus.requestFocus();
+    }
+    return;
+  }
+  if (dragDx.abs() < minDist) return;
+  if (dragDx > 0) {
+    minutesFocus.requestFocus();
+  } else {
+    hoursFocus.requestFocus();
+  }
+}
+
+/// Zone avec détection du swipe horizontal (toute la tela do temporizador ou barre H:M).
 class _SleepHmSwipeBand extends StatefulWidget {
   const _SleepHmSwipeBand({
     required this.hoursFocus,
     required this.minutesFocus,
     required this.child,
+    this.behavior = HitTestBehavior.translucent,
   });
 
   final FocusNode hoursFocus;
   final FocusNode minutesFocus;
   final Widget child;
+  final HitTestBehavior behavior;
 
   @override
   State<_SleepHmSwipeBand> createState() => _SleepHmSwipeBandState();
@@ -873,30 +911,10 @@ class _SleepHmSwipeBand extends StatefulWidget {
 class _SleepHmSwipeBandState extends State<_SleepHmSwipeBand> {
   double _dragDx = 0;
 
-  void _commitSwipe(double velocityX) {
-    const minDist = 28.0;
-    const minVel = 140.0;
-    final useVel = velocityX.abs() >= minVel;
-    if (useVel) {
-      if (velocityX > 0) {
-        widget.minutesFocus.requestFocus();
-      } else {
-        widget.hoursFocus.requestFocus();
-      }
-      return;
-    }
-    if (_dragDx.abs() < minDist) return;
-    if (_dragDx > 0) {
-      widget.minutesFocus.requestFocus();
-    } else {
-      widget.hoursFocus.requestFocus();
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      behavior: HitTestBehavior.translucent,
+      behavior: widget.behavior,
       onHorizontalDragStart: (_) {
         _dragDx = 0;
       },
@@ -904,7 +922,13 @@ class _SleepHmSwipeBandState extends State<_SleepHmSwipeBand> {
         _dragDx += details.delta.dx;
       },
       onHorizontalDragEnd: (details) {
-        _commitSwipe(details.velocity.pixelsPerSecond.dx);
+        _sleepHmApplyHorizontalSwipe(
+          velocityX: details.velocity.pixelsPerSecond.dx,
+          dragDx: _dragDx,
+          hoursFocus: widget.hoursFocus,
+          minutesFocus: widget.minutesFocus,
+        );
+        _dragDx = 0;
       },
       onHorizontalDragCancel: () {
         _dragDx = 0;
@@ -1187,12 +1211,6 @@ class _SleepHmUnderlineFieldsState extends State<_SleepHmUnderlineFields> {
       ],
     );
 
-    final fields = _SleepHmSwipeBand(
-      hoursFocus: widget.hoursFocus,
-      minutesFocus: widget.minutesFocus,
-      child: column,
-    );
-
     return Semantics(
       label: kBibleFmWebFrSleepInputHint,
       child: LayoutBuilder(
@@ -1204,11 +1222,11 @@ class _SleepHmUnderlineFieldsState extends State<_SleepHmUnderlineFields> {
               alignment: Alignment.center,
               child: ConstrainedBox(
                 constraints: BoxConstraints(maxWidth: c.maxWidth),
-                child: fields,
+                child: column,
               ),
             );
           }
-          return fields;
+          return column;
         },
       ),
     );
