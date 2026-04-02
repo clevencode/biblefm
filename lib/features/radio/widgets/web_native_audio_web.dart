@@ -6,7 +6,7 @@ import 'dart:html' as html;
 import 'dart:ui_web' as ui_web;
 
 import 'package:flutter/material.dart';
-import 'package:meu_app/core/strings/bible_fm_strings.dart';
+import 'package:bibliofani/core/strings/bible_fm_strings.dart';
 
 /// Tempos centralizados (spinner, esperas de buffer no live).
 const _kWebCanPlayTimeout = Duration(seconds: 10);
@@ -23,7 +23,7 @@ html.DivElement? _webAudioControlsWrap;
 String? _webLiveStreamBaseUrl;
 
 /// Estilos para `::-webkit-media-controls-*`: fundo do painel nativo transparente (contorno fica no Flutter).
-const _kAudioChromeStyleId = 'biblophani-audio-chrome-style-v3';
+const _kAudioChromeStyleId = 'bibliofani-audio-chrome-style-v3';
 
 void _ensureAudioControlsChromeCss() {
   if (html.document.getElementById(_kAudioChromeStyleId) != null) {
@@ -32,18 +32,18 @@ void _ensureAudioControlsChromeCss() {
   final style = html.StyleElement()
     ..id = _kAudioChromeStyleId
     ..text = '''
-.biblophani-native-audio {
+.bibliofani-native-audio {
   background-color: transparent !important;
   color-scheme: dark !important;
   accent-color: #ffffff !important;
   color: #ffffff !important;
 }
-.biblophani-native-audio::-webkit-media-controls-panel,
-.biblophani-native-audio::-webkit-media-controls-enclosure {
+.bibliofani-native-audio::-webkit-media-controls-panel,
+.bibliofani-native-audio::-webkit-media-controls-enclosure {
   background-color: rgba(0, 0, 0, 0) !important;
 }
-.biblophani-native-audio::-webkit-media-controls-current-time-display,
-.biblophani-native-audio::-webkit-media-controls-time-remaining-display {
+.bibliofani-native-audio::-webkit-media-controls-current-time-display,
+.bibliofani-native-audio::-webkit-media-controls-time-remaining-display {
   color: #ffffff !important;
   text-shadow: none !important;
 }
@@ -124,7 +124,7 @@ void _installWebMediaSession(html.AudioElement a) {
   if (ms == null) return;
   try {
     ms.metadata = html.MediaMetadata({
-      'title': 'BibloPhani',
+      'title': 'Bibliofani',
       'artist': 'En direct',
       'album': 'Radio',
     });
@@ -438,7 +438,7 @@ class WebNativeAudioControls extends StatefulWidget {
 }
 
 class _WebNativeAudioControlsState extends State<WebNativeAudioControls> {
-  static const String _viewType = 'biblophani-chrome-audio';
+  static const String _viewType = 'bibliofani-chrome-audio';
   static bool _factoryRegistered = false;
 
   void _syncNativeControlsColorScheme() {
@@ -491,8 +491,8 @@ class _WebNativeAudioControlsState extends State<WebNativeAudioControls> {
         ..controls = true
         ..preload = 'none'
         ..src = url
-        ..title = 'BibloPhani'
-        ..className = 'biblophani-native-audio'
+        ..title = 'Bibliofani'
+        ..className = 'bibliofani-native-audio'
         ..setAttribute('aria-label', kBibleFmWebFrNativeAudioAriaLabel)
         ..style.width = '100%'
         ..style.height = '100%'

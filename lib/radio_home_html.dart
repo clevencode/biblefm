@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
-import 'package:meu_app/features/radio/screens/radio_player_page.dart'
+import 'package:bibliofani/features/radio/screens/radio_player_page.dart'
     deferred as radio;
 
 // Erro: mesmo fundo que [index.html] — evita importar Material/AppTheme.

@@ -1,11 +1,11 @@
 {
-    "name": "BibloPhani — Radio en direct",
-    "short_name": "BibloPhani",
+    "name": "Bibliofani — Radio en direct",
+    "short_name": "Bibliofani",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#000000",
     "theme_color": "#000000",
-    "description": "Lecteur web BibloPhani : streaming en direct, contrôles audio et minuteur de veille.",
+    "description": "Lecteur web Bibliofani : streaming en direct, contrôles audio et minuteur de veille.",
     "orientation": "any",
     "prefer_related_applications": false,
     "icons": [

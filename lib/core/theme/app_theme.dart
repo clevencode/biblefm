@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:meu_app/core/theme/app_spacing.dart';
+import 'package:bibliofani/core/theme/app_spacing.dart';
 
 /// Tema **claro** (Notion) e **escuro minimalista premium**: poucos tons, muito contraste
 /// legível, superfícies quase pretas e realces discretos — sem gradientes chamativos.

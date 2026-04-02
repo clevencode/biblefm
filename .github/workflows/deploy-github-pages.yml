@@ -6,7 +6,7 @@
 # 3. Guardar. O próximo push em `main` (ou «Run workflow») faz build e publica.
 # 4. Se aparecer pedido de aprovação: Settings → Environments → github-pages → Required reviewers (opcional).
 #
-# URL do projecto: https://<utilizador>.github.io/biblefm/
+# URL do projecto: https://<utilizador>.github.io/bibliofani/
 # (ajusta `--base-href` abaixo se o nome do repo for outro.)
 #
 # 404.html = cópia de index.html → recarregar em subcaminhos no Pages não devolve 404 em branco.
@@ -42,7 +42,7 @@ jobs:
 
       - run: flutter pub get
       # --no-web-resources-cdn: CanvasKit no mesmo origin → menos cadeia a terceiros e melhor para Lighthouse (rede).
-      - run: flutter build web --release --base-href "/biblefm/" --no-web-resources-cdn --optimization-level=4
+      - run: flutter build web --release --base-href "/bibliofani/" --no-web-resources-cdn --optimization-level=4
 
       - name: SPA no Pages (404 → mesma shell que index.html)
         run: cp build/web/index.html build/web/404.html

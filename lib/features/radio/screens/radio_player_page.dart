@@ -3,11 +3,11 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:meu_app/core/strings/bible_fm_strings.dart';
-import 'package:meu_app/core/theme/app_theme.dart';
-import 'package:meu_app/features/radio/radio_stream_config.dart';
-import 'package:meu_app/features/radio/widgets/broadcast_signal_icon.dart';
-import 'package:meu_app/features/radio/widgets/web_native_audio.dart';
+import 'package:bibliofani/core/strings/bible_fm_strings.dart';
+import 'package:bibliofani/core/theme/app_theme.dart';
+import 'package:bibliofani/features/radio/radio_stream_config.dart';
+import 'package:bibliofani/features/radio/widgets/broadcast_signal_icon.dart';
+import 'package:bibliofani/features/radio/widgets/web_native_audio.dart';
 
 /// Ancora visual: barra do temporizador alinha logo abaixo desta cápsula.
 final GlobalKey _kWebTransportCapsule = GlobalKey(
@@ -128,7 +128,7 @@ class _WebTransportLayoutSpec {
   }
 }
 
-/// BibloPhani — leitor **apenas Web** (`<audio controls>` + botão directo).
+/// Bibliofani — leitor **apenas Web** (`<audio controls>` + botão directo).
 class RadioPlayerPage extends StatelessWidget {
   const RadioPlayerPage({super.key});
 

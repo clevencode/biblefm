@@ -2,7 +2,7 @@
 library;
 
 // --- Página ---
-const String kBibleFmSemanticsPlayerPage = 'BibloPhani, leitor de rádio';
+const String kBibleFmSemanticsPlayerPage = 'Bibliofani, leitor de rádio';
 
 // --- Web: feedback + live (français) — minuscules, ultra court ---
 const String kBibleFmWebFrFeedbackReloading = 'connexion…';
@@ -29,11 +29,11 @@ const String kBibleFmWebFrBackgroundGestureA11y =
 // --- Web: lecteur HTML natif (`<audio controls>`) ---
 /// Attribut [aria-label] sur l’élément `<audio>` (lecteurs d’écran).
 const String kBibleFmWebFrNativeAudioAriaLabel =
-    'BibloPhani, flux audio en direct';
+    'Bibliofani, flux audio en direct';
 
 /// Semantics Flutter autour du [HtmlElementView] (complement au natif).
 const String kBibleFmWebFrNativeAudioSemanticsLabel =
-    'Contrôles audio du navigateur pour BibloPhani';
+    'Contrôles audio du navigateur pour Bibliofani';
 const String kBibleFmWebFrNativeAudioSemanticsHint =
     'Lecture, pause et barre de progression sont fournis par votre navigateur.';
 
