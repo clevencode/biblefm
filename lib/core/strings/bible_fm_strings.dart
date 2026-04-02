@@ -2,7 +2,7 @@
 library;
 
 // --- Página ---
-const String kBibleFmSemanticsPlayerPage = 'Bible FM, leitor de rádio';
+const String kBibleFmSemanticsPlayerPage = 'BibloPhani, leitor de rádio';
 
 // --- Web: feedback + live (français) ---
 const String kBibleFmWebFrFeedbackReloading = 'Connexion au direct…';
@@ -29,10 +29,10 @@ const String kBibleFmWebFrBackgroundGestureA11y =
 // --- Web: lecteur HTML natif (`<audio controls>`) ---
 /// Attribut [aria-label] sur l’élément `<audio>` (lecteurs d’écran).
 const String kBibleFmWebFrNativeAudioAriaLabel =
-    'Bible FM, flux audio en direct';
+    'BibloPhani, flux audio en direct';
 /// Semantics Flutter autour du [HtmlElementView] (complement au natif).
 const String kBibleFmWebFrNativeAudioSemanticsLabel =
-    'Contrôles audio du navigateur pour Bible FM';
+    'Contrôles audio du navigateur pour BibloPhani';
 const String kBibleFmWebFrNativeAudioSemanticsHint =
     'Lecture, pause et barre de progression sont fournis par votre navigateur.';
 

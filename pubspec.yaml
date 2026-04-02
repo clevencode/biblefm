@@ -1,5 +1,5 @@
 name: meu_app
-description: "Bible FM — aplicação Flutter apenas Web (GitHub Pages)."
+description: "BibloPhani — aplicação Flutter apenas Web (GitHub Pages)."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -55,7 +55,7 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/splash_logo.png
+    - assets/app_icon_source.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
@@ -87,8 +87,8 @@ flutter:
 flutter_launcher_icons:
   android: false
   ios: false
-  image_path: assets/splash_logo.png
+  image_path: assets/app_icon_source.png
   web:
     generate: true
-    image_path: assets/splash_logo.png
+    image_path: assets/app_icon_source.png
     background_color: "#000000"

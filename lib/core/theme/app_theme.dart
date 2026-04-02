@@ -3,8 +3,8 @@ import 'package:meu_app/core/theme/app_spacing.dart';
 
 /// Tema **claro** (Notion) e **escuro minimalista premium**: poucos tons, muito contraste
 /// legível, superfícies quase pretas e realces discretos — sem gradientes chamativos.
-/// **Barras de transporte em claro:** cinza quente com micro-contraste (cápsula → poço → slider),
-/// interesse visual por hierarquia e tom, sem saturar.
+/// **Barra de reprodução em claro (premium):** gradiente pérola subtil, sombras em camadas,
+/// borda refinada e acento azul no tempo. Escuro mantém cápsula zinco existente.
 /// Tipografia Material 3 (sem fontes de rede na web). [AppSpacing]: grelha 8pt.
 abstract final class AppTheme {
   /// Transição claro ↔ escuro: um pouco mais longa, curva tipo Material 3.
@@ -35,13 +35,74 @@ abstract final class AppTheme {
   static const Color _premiumDarkError = Color(0xFFFCA5A5);
   static const Color _premiumDarkErrorContainer = Color(0xFF450A0A);
 
-  // —— Light «premium minimal» — barras / cápsula (cinzas quentes, hierarquia subtil) ——
-  static const Color _premiumLightCapsuleTrack = Color(0xFF4A4845);
-  static const Color _premiumLightChromeInner = Color(0xFFF1F0EC);
-  static const Color _premiumLightChromeOnInner = Color(0xFF262522);
-  static const Color _premiumLightTimelineTrack = Color(0xFFC5C3BE);
-  static const Color _premiumLightTimelineProgress = Color(0xFF6E6C67);
-  static const Color _premiumLightLiveBorder = Color(0xFFD8D6D1);
+  // —— Light — barra de áudio / transporte (premium: pérola, profundidade, acento primário) ——
+  static const Color _premiumLightCapsuleTrack = Color(0xFFFAFAF8);
+  static const Color _premiumLightChromeInner = Color(0xFFF3F1EE);
+  static const Color _premiumLightChromeOnInner = Color(0xFF1C1917);
+  static const Color _premiumLightTimelineTrack = Color(0xFFE6E4E0);
+  static const Color _premiumLightTimelineProgress = Color(0xFF1D6FD4);
+  static const Color _premiumLightLiveBorder = Color(0xFFD6D3CD);
+
+  /// Gradiente da cápsula (claro): leitura «hardware» premium sem saturar.
+  static const LinearGradient transportCapsuleGradientLight = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    stops: [0.0, 0.42, 1.0],
+    colors: [
+      Color(0xFFFFFFFF),
+      Color(0xFFFCFBFA),
+      Color(0xFFF2F0EC),
+    ],
+  );
+
+  /// Elevação em camadas (só claro) — contact + difusa + penumbra larga.
+  static List<BoxShadow> transportCapsuleShadows(Brightness brightness) {
+    if (brightness == Brightness.dark) return const [];
+    return const [
+      BoxShadow(
+        color: Color(0x08000000),
+        blurRadius: 3,
+        offset: Offset(0, 1),
+      ),
+      BoxShadow(
+        color: Color(0x0D000000),
+        blurRadius: 14,
+        offset: Offset(0, 5),
+        spreadRadius: -2,
+      ),
+      BoxShadow(
+        color: Color(0x07000000),
+        blurRadius: 36,
+        offset: Offset(0, 16),
+        spreadRadius: -10,
+      ),
+    ];
+  }
+
+  /// Decoração unificada da cápsula live + `<audio>` + sono (gradiente em claro).
+  static BoxDecoration transportCapsuleDecoration({
+    required Brightness brightness,
+    required double radius,
+  }) {
+    final r = BorderRadius.circular(radius);
+    final border = Border.all(
+      color: transportCapsuleOutline(brightness),
+      width: 1,
+    );
+    if (brightness == Brightness.dark) {
+      return BoxDecoration(
+        color: transportCapsuleTrack(brightness),
+        borderRadius: r,
+        border: border,
+      );
+    }
+    return BoxDecoration(
+      gradient: transportCapsuleGradientLight,
+      borderRadius: r,
+      border: border,
+      boxShadow: transportCapsuleShadows(brightness),
+    );
+  }
 
   static const double _notionCornerRadius = notionControlRadius;
 
@@ -437,7 +498,7 @@ abstract final class AppTheme {
   /// Anel do disco — combina com o trilho do slider Chrome, sobre o [transportCapsuleTrack].
   static Color liveStreamDiscRing(Brightness brightness) =>
       transportChromeTimelineTrack(brightness).withValues(
-        alpha: brightness == Brightness.dark ? 0.75 : 0.55,
+        alpha: brightness == Brightness.dark ? 0.75 : 0.85,
       );
 
   /// Hover / splash do botão live (coerente com [transportChromeOnInner]).
@@ -456,16 +517,16 @@ abstract final class AppTheme {
   /// Traço da cápsula de transporte e da **barra do temporizador** — mesma leitura visual.
   static Color transportCapsuleOutline(Brightness brightness) =>
       transportLiveBorder(brightness).withValues(
-        alpha: brightness == Brightness.dark ? 0.35 : 0.5,
+        alpha: brightness == Brightness.dark ? 0.35 : 0.88,
       );
 
-  /// Trilho exterior do comprimido **live + play** (claro = carvão quente suave).
+  /// Trilho exterior do comprimido **live + play** (claro = cartão branco; escuro = zinco claro).
   static Color transportCapsuleTrack(Brightness brightness) =>
       brightness == Brightness.dark
           ? const Color(0xFFD6D6D4)
           : _premiumLightCapsuleTrack;
 
-  /// Poço interior da cápsula sobre [transportCapsuleTrack] (claro = papel lavado).
+  /// Poço interior da cápsula sobre [transportCapsuleTrack] (claro = cinza muito claro).
   static Color transportChromeInnerFill(Brightness brightness) =>
       brightness == Brightness.dark
           ? const Color(0xFFEFEFEF)
@@ -477,7 +538,7 @@ abstract final class AppTheme {
           ? const Color(0xFF141414)
           : _premiumLightChromeOnInner;
 
-  /// Trilho fino do slider temporal (claro = cinza quente arejado).
+  /// Trilho fino do slider temporal (claro = neutro arejado).
   static Color transportChromeTimelineTrack(Brightness brightness) =>
       brightness == Brightness.dark
           ? const Color(0xFFCFCFCF)

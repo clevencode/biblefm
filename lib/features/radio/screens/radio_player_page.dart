@@ -18,7 +18,112 @@ final GlobalKey _kWebTransportCapsule = GlobalKey(
 final GlobalKey<_WebSleepTimerButtonState> _kWebSleepTimerButtonKey =
     GlobalKey<_WebSleepTimerButtonState>(debugLabel: 'webSleepTimerButton');
 
-/// Bible FM — leitor **apenas Web** (`<audio controls>` + botão directo).
+/// Métricas da barra de transporte: breakpoints, escala de texto e espaçamentos.
+@immutable
+class _WebTransportLayoutSpec {
+  const _WebTransportLayoutSpec({
+    required this.maxContentWidth,
+    required this.hPadLeft,
+    required this.hPadRight,
+    required this.vPad,
+    required this.feedbackBelowGap,
+    required this.capsuleHeight,
+    required this.padH,
+    required this.padV,
+    required this.liveDiameter,
+    required this.audioControlsHeight,
+    required this.gapLiveAudio,
+    required this.gapAudioSleep,
+    required this.showDesktopScrollbars,
+    required this.feedbackUseSmallerType,
+  });
+
+  final double maxContentWidth;
+  final double hPadLeft;
+  final double hPadRight;
+  final double vPad;
+  final double feedbackBelowGap;
+  final double capsuleHeight;
+  final double padH;
+  final double padV;
+  final double liveDiameter;
+  final double audioControlsHeight;
+  final double gapLiveAudio;
+  final double gapAudioSleep;
+  final bool showDesktopScrollbars;
+  final bool feedbackUseSmallerType;
+
+  double get innerHeight => capsuleHeight - 2 * padV;
+
+  static _WebTransportLayoutSpec compute({
+    required double layoutW,
+    required double layoutH,
+    required TextScaler textScaler,
+  }) {
+    final tScale = textScaler.scale(1.0);
+    final cappedScale = tScale.clamp(1.0, 1.45);
+    final gentleScale = math.pow(cappedScale, 0.38).toDouble();
+
+    final narrow = layoutW < 360;
+    final compact = layoutW < 440;
+    final medium = layoutW < 720;
+    final wide = layoutW >= 900;
+
+    final baseH = narrow ? 10.0 : (compact ? 12.0 : (medium ? 18.0 : 24.0));
+    final hPadLeft = baseH;
+    final hPadRight = baseH;
+    final availableW = math.max(0.0, layoutW - hPadLeft - hPadRight);
+    final maxContent = wide
+        ? math.min(720.0, availableW)
+        : (layoutW >= 600 ? math.min(640.0, availableW) : math.min(560.0, availableW));
+
+    final shortViewport = layoutH > 0 && layoutH < 520;
+    final feedbackBelowGap = shortViewport ? 10.0 : (compact ? 12.0 : 16.0);
+
+    final padH = narrow ? 5.0 : (compact ? 6.0 : 8.0);
+    final padV = narrow ? 5.0 : (compact ? 6.0 : 5.0);
+
+    final liveBase = compact ? 48.0 : 46.0;
+    final liveDiameter = (liveBase * cappedScale.clamp(1.0, 1.12)).clamp(44.0, 56.0);
+
+    final audioBase = compact ? 48.0 : 42.0;
+    final audioControlsHeight =
+        (audioBase * cappedScale.clamp(1.0, 1.18)).clamp(40.0, 56.0);
+
+    final capsuleBase = compact ? 56.0 : 54.0;
+    final innerNeeded = math.max(liveDiameter, audioControlsHeight) + 2.0;
+    final capsuleHeight = math
+        .max(
+          (capsuleBase * gentleScale).clamp(50.0, 68.0),
+          innerNeeded + 2 * padV,
+        )
+        .clamp(50.0, 76.0);
+
+    final gapLiveAudio = narrow ? 8.0 : 10.0;
+    final gapAudioSleep = narrow ? 6.0 : 8.0;
+
+    final vPad = compact ? 6.0 : (shortViewport ? 4.0 : 10.0);
+
+    return _WebTransportLayoutSpec(
+      maxContentWidth: maxContent > 0 ? maxContent : availableW,
+      hPadLeft: hPadLeft,
+      hPadRight: hPadRight,
+      vPad: vPad,
+      feedbackBelowGap: feedbackBelowGap,
+      capsuleHeight: capsuleHeight,
+      padH: padH,
+      padV: padV,
+      liveDiameter: liveDiameter,
+      audioControlsHeight: audioControlsHeight,
+      gapLiveAudio: gapLiveAudio,
+      gapAudioSleep: gapAudioSleep,
+      showDesktopScrollbars: !compact && layoutW >= 520,
+      feedbackUseSmallerType: layoutW < 380 || cappedScale > 1.15,
+    );
+  }
+}
+
+/// BibloPhani — leitor **apenas Web** (`<audio controls>` + botão directo).
 class RadioPlayerPage extends StatelessWidget {
   const RadioPlayerPage({super.key});
 
@@ -130,8 +235,9 @@ class _WebPlayerScrollBridgeState extends State<_WebPlayerScrollBridge> {
     if (!mounted || _useScrollLayout) return;
     final box = _measureKey.currentContext?.findRenderObject() as RenderBox?;
     if (box == null || !box.hasSize) return;
-    final needsScroll = box.size.height > constraints.maxHeight + 0.5;
-    if (needsScroll) {
+    final needsVertical = box.size.height > constraints.maxHeight + 0.5;
+    final needsHorizontal = box.size.width > constraints.maxWidth + 0.5;
+    if (needsVertical || needsHorizontal) {
       setState(() {
         _useScrollLayout = true;
         _overflowConstraintsQueued = null;
@@ -154,46 +260,43 @@ class _WebPlayerScrollBridgeState extends State<_WebPlayerScrollBridge> {
 
   Widget _transportColumn({
     required Brightness brightness,
-    required double innerH,
-    required double webCapsuleH,
-    required double webPadH,
-    required double webPadV,
-    required double webLiveDiameter,
-    required double webAudioH,
+    required _WebTransportLayoutSpec spec,
   }) {
+    final innerH = spec.innerHeight;
     return Column(
       key: _measureKey,
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const _WebRealtimeFeedbackLine(),
-        const SizedBox(height: 16),
+        _WebRealtimeFeedbackLine(useSmallerType: spec.feedbackUseSmallerType),
+        SizedBox(height: spec.feedbackBelowGap),
         DecoratedBox(
           key: _kWebTransportCapsule,
-          decoration: BoxDecoration(
-            color: AppTheme.transportCapsuleTrack(brightness),
-            borderRadius: BorderRadius.circular(webCapsuleH / 2),
-            border: Border.all(
-              color: AppTheme.transportCapsuleOutline(brightness),
-              width: 1,
-            ),
+          decoration: AppTheme.transportCapsuleDecoration(
+            brightness: brightness,
+            radius: spec.capsuleHeight / 2,
           ),
           child: Padding(
-            padding: EdgeInsets.fromLTRB(webPadH, webPadV, webPadH, webPadV),
+            padding: EdgeInsets.fromLTRB(
+              spec.padH,
+              spec.padV,
+              spec.padH,
+              spec.padV,
+            ),
             child: SizedBox(
               height: innerH,
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  _WebLiveStreamButton(diameter: webLiveDiameter),
-                  const SizedBox(width: 10),
+                  _WebLiveStreamButton(diameter: spec.liveDiameter),
+                  SizedBox(width: spec.gapLiveAudio),
                   Expanded(
                     child: WebNativeAudioControls(
                       streamUrl: kBibleFmLiveStreamUrl,
-                      controlsHeight: webAudioH,
+                      controlsHeight: spec.audioControlsHeight,
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  SizedBox(width: spec.gapAudioSleep),
                   _WebSleepTimerButton(
                     key: _kWebSleepTimerButtonKey,
                     controlHeight: innerH,
@@ -233,36 +336,34 @@ class _WebPlayerScrollBridgeState extends State<_WebPlayerScrollBridge> {
         _scheduleOverflowCheck(constraints);
 
         final layoutW = constraints.maxWidth;
-        // Largura típica de telemóvel em portrait: cápsula mais alta e alvos de toque ≥ 44 px.
+        final layoutH = constraints.maxHeight;
+        final textScaler = MediaQuery.textScalerOf(context);
+        final spec = _WebTransportLayoutSpec.compute(
+          layoutW: layoutW,
+          layoutH: layoutH.isFinite ? layoutH : 0,
+          textScaler: textScaler,
+        );
         final compact = layoutW < 440;
-        final hPad = compact ? 12.0 : 24.0;
-        final vPad = compact ? 6.0 : 8.0;
-        final webCapsuleH = compact ? 56.0 : 52.0;
-        final webPadH = compact ? 6.0 : 8.0;
-        final webPadV = compact ? 6.0 : 5.0;
-        final webLiveDiameter = compact ? 48.0 : 44.0;
-        final webAudioH = compact ? 48.0 : 40.0;
-        final innerH = webCapsuleH - 2 * webPadV;
 
         final column = _transportColumn(
           brightness: brightness,
-          innerH: innerH,
-          webCapsuleH: webCapsuleH,
-          webPadH: webPadH,
-          webPadV: webPadV,
-          webLiveDiameter: webLiveDiameter,
-          webAudioH: webAudioH,
+          spec: spec,
         );
 
         final paddedColumn = Padding(
-          padding: EdgeInsets.symmetric(horizontal: hPad, vertical: vPad),
+          padding: EdgeInsets.fromLTRB(
+            spec.hPadLeft,
+            spec.vPad,
+            spec.hPadRight,
+            spec.vPad,
+          ),
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
+            constraints: BoxConstraints(maxWidth: spec.maxContentWidth),
             child: column,
           ),
         );
 
-        final showScrollbars = !compact;
+        final showScrollbars = spec.showDesktopScrollbars;
 
         if (!_useScrollLayout) {
           return _sleepSwipeWrapper(
@@ -360,7 +461,9 @@ Color _webPlaybackFeedbackColor(
 }
 
 class _WebRealtimeFeedbackLine extends StatelessWidget {
-  const _WebRealtimeFeedbackLine();
+  const _WebRealtimeFeedbackLine({required this.useSmallerType});
+
+  final bool useSmallerType;
 
   @override
   Widget build(BuildContext context) {
@@ -395,74 +498,78 @@ class _WebRealtimeFeedbackLine extends StatelessWidget {
         );
         final showOnAirDot = playing && liveEdge && !reloading;
         final onAirColor = Theme.of(context).colorScheme.error;
+        final theme = Theme.of(context);
+        final TextStyle? feedbackStyle = useSmallerType
+            ? theme.textTheme.titleMedium
+            : theme.textTheme.titleLarge;
 
         return Semantics(
           liveRegion: true,
           label: msg,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (showOnAirDot) ...[
-                Container(
-                  width: 9,
-                  height: 9,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: onAirColor,
-                    boxShadow: [
-                      BoxShadow(
-                        color: onAirColor.withValues(alpha: 0.4),
-                        blurRadius: 6,
-                        spreadRadius: 0.5,
-                      ),
-                    ],
+          child: SizedBox(
+            width: double.infinity,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                if (showOnAirDot) ...[
+                  Container(
+                    width: 9,
+                    height: 9,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: onAirColor,
+                      boxShadow: [
+                        BoxShadow(
+                          color: onAirColor.withValues(alpha: 0.4),
+                          blurRadius: 6,
+                          spreadRadius: 0.5,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                ],
+                Expanded(
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 280),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    layoutBuilder: (current, previous) {
+                      return Stack(
+                        alignment: Alignment.center,
+                        clipBehavior: Clip.none,
+                        children: [...previous, ?current],
+                      );
+                    },
+                    transitionBuilder: (child, animation) {
+                      final pull =
+                          Tween<Offset>(
+                            begin: const Offset(0, 0.22),
+                            end: Offset.zero,
+                          ).animate(
+                            CurvedAnimation(
+                              parent: animation,
+                              curve: Curves.easeOutCubic,
+                            ),
+                          );
+                      return SlideTransition(
+                        position: pull,
+                        child: FadeTransition(opacity: animation, child: child),
+                      );
+                    },
+                    child: Text(
+                      msg,
+                      key: ValueKey<String>(msg),
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: feedbackStyle?.copyWith(color: color),
+                    ),
                   ),
                 ),
-                const SizedBox(width: 10),
               ],
-              Flexible(
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 280),
-                  switchInCurve: Curves.easeOutCubic,
-                  switchOutCurve: Curves.easeInCubic,
-                  layoutBuilder: (current, previous) {
-                    return Stack(
-                      alignment: Alignment.center,
-                      clipBehavior: Clip.none,
-                      children: [...previous, ?current],
-                    );
-                  },
-                  transitionBuilder: (child, animation) {
-                    final pull =
-                        Tween<Offset>(
-                          begin: const Offset(0, 0.22),
-                          end: Offset.zero,
-                        ).animate(
-                          CurvedAnimation(
-                            parent: animation,
-                            curve: Curves.easeOutCubic,
-                          ),
-                        );
-                    return SlideTransition(
-                      position: pull,
-                      child: FadeTransition(opacity: animation, child: child),
-                    );
-                  },
-                  child: Text(
-                    msg,
-                    key: ValueKey<String>(msg),
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: (MediaQuery.sizeOf(context).width < 360
-                            ? Theme.of(context).textTheme.titleMedium
-                            : Theme.of(context).textTheme.titleLarge)
-                        ?.copyWith(color: color),
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
         );
       },
@@ -707,43 +814,11 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
           final brightness = scheme.brightness;
           // Sem blur: véu só a escurecer (mais opaco que o antigo com desfoque).
           final barrierAlpha = brightness == Brightness.dark ? 0.80 : 0.38;
-          final screenSize = MediaQuery.sizeOf(dialogContext);
-          final safe = MediaQuery.paddingOf(dialogContext);
-          final minScreenPad = math.max(16.0, math.max(safe.left, safe.right));
-          final screenW = screenSize.width;
-          final horizontalGutter =
-              math.max(48.0, safe.left + safe.right + 24.0);
-          final targetW =
-              (screenW - horizontalGutter).clamp(280.0, 560.0).toDouble();
 
-          final capsuleBox =
-              _kWebTransportCapsule.currentContext?.findRenderObject()
-                  as RenderBox?;
-          double top;
-          double left;
-          if (capsuleBox != null && capsuleBox.hasSize && capsuleBox.attached) {
-            final origin = capsuleBox.localToGlobal(Offset.zero);
-            top = origin.dy + capsuleBox.size.height + gapBelowTransport;
-            left = origin.dx + (capsuleBox.size.width - targetW) / 2;
-            left = left.clamp(
-              safe.left + 8.0,
-              screenW - targetW - safe.right - 8.0,
-            );
-            final maxTop = (screenSize.height -
-                    sleepBarViewportReserve -
-                    minScreenPad -
-                    safe.bottom)
-                .clamp(safe.top + 8.0, double.infinity)
-                .toDouble();
-            top = top.clamp(safe.top + 8.0, maxTop);
-          } else {
-            top = screenSize.height * 0.42;
-            left = (screenW - targetW) / 2;
-            left = left.clamp(
-              safe.left + 8.0,
-              screenW - targetW - safe.right - 8.0,
-            );
-          }
+          /// Altura útil da pílula H:M + botão (evita sobrepor o teclado no mobile).
+          const estimatedSleepPanelHeight = 88.0;
+          /// Margem mínima entre a pílula e o topo do teclado / borda inferior.
+          const keyboardClearance = 10.0;
 
           void applyAndClose() {
             if (!canApply()) return;
@@ -777,88 +852,155 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
             }
           }
 
-          // Sem Theme() extra: evita outro InheritedWidget durante o pop.
-          return Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Positioned.fill(
-                child: _SleepHmSwipeBand(
-                  behavior: HitTestBehavior.opaque,
-                  hoursFocus: hoursFocus,
-                  minutesFocus: minutesFocus,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: onVeilSingleTap,
-                    onDoubleTap: onVeilDoubleTap,
-                    onVerticalDragEnd: onSwipeUpClose,
-                    child: ColoredBox(
-                      color: scheme.scrim.withValues(alpha: barrierAlpha),
+          // Builder: [MediaQuery.viewInsets] actualiza com o teclado virtual (mobile web / app).
+          return Builder(
+            builder: (overlayContext) {
+              final mq = MediaQuery.of(overlayContext);
+              final screenSize = mq.size;
+              final safe = mq.padding;
+              final keyboardBottom = mq.viewInsets.bottom;
+              final minScreenPad = math.max(16.0, math.max(safe.left, safe.right));
+              final screenW = screenSize.width;
+              final horizontalGutter =
+                  math.max(48.0, safe.left + safe.right + 24.0);
+              final targetW =
+                  (screenW - horizontalGutter).clamp(280.0, 560.0).toDouble();
+
+              final capsuleBox =
+                  _kWebTransportCapsule.currentContext?.findRenderObject()
+                      as RenderBox?;
+              double top;
+              double left;
+              if (capsuleBox != null && capsuleBox.hasSize && capsuleBox.attached) {
+                final origin = capsuleBox.localToGlobal(Offset.zero);
+                top = origin.dy + capsuleBox.size.height + gapBelowTransport;
+                left = origin.dx + (capsuleBox.size.width - targetW) / 2;
+                left = left.clamp(
+                  safe.left + 8.0,
+                  screenW - targetW - safe.right - 8.0,
+                );
+                final maxTopNoKeyboard = (screenSize.height -
+                        sleepBarViewportReserve -
+                        minScreenPad -
+                        safe.bottom)
+                    .clamp(safe.top + 8.0, double.infinity)
+                    .toDouble();
+                top = top.clamp(safe.top + 8.0, maxTopNoKeyboard);
+              } else {
+                top = screenSize.height * 0.42;
+                left = (screenW - targetW) / 2;
+                left = left.clamp(
+                  safe.left + 8.0,
+                  screenW - targetW - safe.right - 8.0,
+                );
+              }
+
+              // Garantir que a pílula fica acima do teclado (área útil = ecrã − insets).
+              final aboveKeyboardTop = screenSize.height -
+                  keyboardBottom -
+                  estimatedSleepPanelHeight -
+                  keyboardClearance;
+              final maxTopWithKeyboard = math.min(
+                aboveKeyboardTop,
+                screenSize.height -
+                    sleepBarViewportReserve -
+                    minScreenPad -
+                    safe.bottom,
+              );
+              top = top.clamp(
+                safe.top + 8.0,
+                maxTopWithKeyboard.clamp(safe.top + 8.0, double.infinity),
+              );
+
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned.fill(
+                    child: _SleepHmSwipeBand(
+                      behavior: HitTestBehavior.opaque,
+                      hoursFocus: hoursFocus,
+                      minutesFocus: minutesFocus,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: onVeilSingleTap,
+                        onDoubleTap: onVeilDoubleTap,
+                        onVerticalDragEnd: onSwipeUpClose,
+                        child: ColoredBox(
+                          color: scheme.scrim.withValues(alpha: barrierAlpha),
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
-              Positioned(
-                top: top,
-                left: left,
-                width: targetW,
-                child: Material(
-                  type: MaterialType.transparency,
-                  child: StatefulBuilder(
-                    builder: (context, setLocalState) {
-                      final valid = canApply();
-                      return GestureDetector(
-                        behavior: HitTestBehavior.translucent,
-                        onVerticalDragEnd: onSwipeUpClose,
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(999),
-                          child: DecoratedBox(
-                            decoration: const BoxDecoration(
-                              color: Colors.transparent,
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.fromLTRB(8, 6, 6, 6),
-                              child: _SleepHmSwipeBand(
-                                hoursFocus: hoursFocus,
-                                minutesFocus: minutesFocus,
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                  children: [
-                                    Expanded(
-                                      child: _SleepHmUnderlineFields(
-                                        hoursController: hoursController,
-                                        minutesController: minutesController,
-                                        hoursFocus: hoursFocus,
-                                        minutesFocus: minutesFocus,
-                                        onChanged: () => setLocalState(() {}),
-                                        onHoursSubmitted: () =>
-                                            minutesFocus.requestFocus(),
-                                        onMinutesSubmitted: applyAndClose,
-                                      ),
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 160),
+                    curve: Curves.easeOutCubic,
+                    top: top,
+                    left: left,
+                    width: targetW,
+                    child: Material(
+                      type: MaterialType.transparency,
+                      child: StatefulBuilder(
+                        builder: (context, setLocalState) {
+                          final valid = canApply();
+                          return GestureDetector(
+                            behavior: HitTestBehavior.translucent,
+                            onVerticalDragEnd: onSwipeUpClose,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(999),
+                              child: DecoratedBox(
+                                decoration: const BoxDecoration(
+                                  color: Colors.transparent,
+                                ),
+                                child: Padding(
+                                  padding:
+                                      const EdgeInsets.fromLTRB(8, 6, 6, 6),
+                                  child: _SleepHmSwipeBand(
+                                    hoursFocus: hoursFocus,
+                                    minutesFocus: minutesFocus,
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.center,
+                                      children: [
+                                        Expanded(
+                                          child: _SleepHmUnderlineFields(
+                                            hoursController: hoursController,
+                                            minutesController:
+                                                minutesController,
+                                            hoursFocus: hoursFocus,
+                                            minutesFocus: minutesFocus,
+                                            onChanged: () =>
+                                                setLocalState(() {}),
+                                            onHoursSubmitted: () =>
+                                                minutesFocus.requestFocus(),
+                                            onMinutesSubmitted: applyAndClose,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 2),
+                                        _SleepActionButton(
+                                          cancelMode: false,
+                                          enabled: valid,
+                                          onTap: () {
+                                            if (!canApply()) return;
+                                            _startSleepTimer(
+                                              totalMinutesFromFields(),
+                                            );
+                                            Navigator.of(dialogContext).pop();
+                                          },
+                                        ),
+                                      ],
                                     ),
-                                    const SizedBox(width: 2),
-                                    _SleepActionButton(
-                                      cancelMode: false,
-                                      enabled: valid,
-                                      onTap: () {
-                                        if (!canApply()) return;
-                                        _startSleepTimer(
-                                          totalMinutesFromFields(),
-                                        );
-                                        Navigator.of(dialogContext).pop();
-                                      },
-                                    ),
-                                  ],
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                        ),
-                      );
-                    },
+                          );
+                        },
+                      ),
+                    ),
                   ),
-                ),
-              ),
-            ],
+                ],
+              );
+            },
           );
         },
       );

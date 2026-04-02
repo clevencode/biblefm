@@ -95,7 +95,7 @@ void _installWebMediaSession(html.AudioElement a) {
   if (ms == null) return;
   try {
     ms.metadata = html.MediaMetadata({
-      'title': 'Bible FM',
+      'title': 'BibloPhani',
       'artist': 'En direct',
       'album': 'Radio',
     });
@@ -409,13 +409,50 @@ class WebNativeAudioControls extends StatefulWidget {
 }
 
 class _WebNativeAudioControlsState extends State<WebNativeAudioControls> {
-  static const String _viewType = 'bible-fm-chrome-audio';
+  static const String _viewType = 'biblophani-chrome-audio';
   static bool _factoryRegistered = false;
+
+  void _syncNativeControlsColorScheme() {
+    final wrap = _webAudioControlsWrap;
+    if (wrap == null || !mounted) return;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    wrap.style.setProperty('color-scheme', dark ? 'dark' : 'light');
+    if (dark) {
+      wrap.style.removeProperty('background');
+      wrap.style.removeProperty('box-shadow');
+    } else {
+      // Poço premium alinhado à cápsula Flutter (gradiente pérola + bisel interior).
+      wrap.style.setProperty(
+        'background',
+        'linear-gradient(165deg, #ffffff 0%, #faf9f7 45%, #f0eeea 100%)',
+      );
+      wrap.style.setProperty(
+        'box-shadow',
+        'inset 0 1px 0 rgba(255,255,255,0.94), inset 0 -1px 0 rgba(12,10,8,0.06)',
+      );
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     _registerFactoryOnce();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncNativeControlsColorScheme();
+    });
+  }
+
+  @override
+  void didUpdateWidget(WebNativeAudioControls oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncNativeControlsColorScheme();
+    });
   }
 
   void _registerFactoryOnce() {
@@ -428,7 +465,7 @@ class _WebNativeAudioControlsState extends State<WebNativeAudioControls> {
         ..controls = true
         ..preload = 'none'
         ..src = url
-        ..title = 'Bible FM'
+        ..title = 'BibloPhani'
         ..setAttribute('aria-label', kBibleFmWebFrNativeAudioAriaLabel)
         ..style.width = '100%'
         ..style.height = '100%'
@@ -439,7 +476,8 @@ class _WebNativeAudioControlsState extends State<WebNativeAudioControls> {
         ..style.height = '100%'
         ..style.boxSizing = 'border-box'
         ..style.overflow = 'hidden'
-        ..style.borderRadius = '10px'
+        ..style.borderRadius = '14px'
+        ..style.setProperty('color-scheme', 'light')
         ..append(a);
       _webAudioControlsWrap = wrap;
       _installWheelRelayOnAudioWrap(wrap);

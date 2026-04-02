@@ -27,9 +27,9 @@ class RadioApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Bible FM',
+      title: 'BibloPhani',
       debugShowCheckedModeBanner: false,
-      restorationScopeId: 'biblefm_app',
+      restorationScopeId: 'biblophani_app',
       themeMode: ThemeMode.dark,
       theme: AppTheme.dark,
       scrollBehavior: const _RadioAppScrollBehavior(),

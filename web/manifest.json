@@ -1,11 +1,11 @@
 {
-    "name": "Bible FM — Radio en direct",
-    "short_name": "Bible FM",
+    "name": "BibloPhani — Radio en direct",
+    "short_name": "BibloPhani",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#000000",
     "theme_color": "#000000",
-    "description": "Lecteur web Bible FM : streaming en direct, contrôles audio et minuteur de veille.",
+    "description": "Lecteur web BibloPhani : streaming en direct, contrôles audio et minuteur de veille.",
     "orientation": "any",
     "prefer_related_applications": false,
     "icons": [
