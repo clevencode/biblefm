@@ -80,10 +80,11 @@ migrate_working_dir/
 # =============================================
 # Deploy e ferramentas (Vercel)
 # =============================================
+# Pasta de link do CLI (credenciais locais) — não commitar.
 .vercel
 /.vercel
 /deploy-vercel/
-.vercel.json
+# vercel.json na raiz é versionado (rewrites SPA / Flutter Web).
 
 # =============================================
 # Symbolication e ofuscação
