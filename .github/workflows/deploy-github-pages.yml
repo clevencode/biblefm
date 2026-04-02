@@ -1,13 +1,17 @@
 # Flutter web → GitHub Pages (fonte oficial «GitHub Actions»).
 #
-# 1) Repo → Settings → Pages → Build and deployment
-#    Source: GitHub Actions (não «Deploy from a branch»).
-# 2) No primeiro deploy: aprove o ambiente «github-pages» se o GitHub pedir.
+# Como activar a «página» no GitHub (primeira vez):
+# 1. Repo no GitHub → Settings → Pages
+# 2. Build and deployment → Source: **GitHub Actions** (não «Deploy from a branch»)
+# 3. Guardar. O próximo push em `main` (ou «Run workflow») faz build e publica.
+# 4. Se aparecer pedido de aprovação: Settings → Environments → github-pages → Required reviewers (opcional).
 #
-# URL: https://clevencode.github.io/biblefm/
+# URL do projecto: https://<utilizador>.github.io/biblefm/
+# (ajusta `--base-href` abaixo se o nome do repo for outro.)
+#
+# 404.html = cópia de index.html → recarregar em subcaminhos no Pages não devolve 404 em branco.
 #
 # Lighthouse «Use efficient cache lifetimes»: o GitHub Pages não permite Cache-Control longo nos estáticos.
-# Para nota máxima nesse audit, usa um CDN/proxy (ex. Cloudflare) com cache agressivo em *.js, /canvaskit/*, *.wasm.
 
 name: Deploy web to GitHub Pages
 
@@ -39,6 +43,9 @@ jobs:
       - run: flutter pub get
       # --no-web-resources-cdn: CanvasKit no mesmo origin → menos cadeia a terceiros e melhor para Lighthouse (rede).
       - run: flutter build web --release --base-href "/biblefm/" --no-web-resources-cdn --optimization-level=4
+
+      - name: SPA no Pages (404 → mesma shell que index.html)
+        run: cp build/web/index.html build/web/404.html
 
       - name: Desactivar Jekyll (assets Flutter)
         run: touch build/web/.nojekyll
