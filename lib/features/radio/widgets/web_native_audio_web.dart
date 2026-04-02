@@ -22,6 +22,35 @@ html.DivElement? _webAudioControlsWrap;
 /// URL base do fluxo (registada com o `<audio>`) — appui long no fundo e botão live.
 String? _webLiveStreamBaseUrl;
 
+/// Estilos para `::-webkit-media-controls-*`: fundo do painel nativo transparente (contorno fica no Flutter).
+const _kAudioChromeStyleId = 'biblophani-audio-chrome-style-v3';
+
+void _ensureAudioControlsChromeCss() {
+  if (html.document.getElementById(_kAudioChromeStyleId) != null) {
+    return;
+  }
+  final style = html.StyleElement()
+    ..id = _kAudioChromeStyleId
+    ..text = '''
+.biblophani-native-audio {
+  background-color: transparent !important;
+  color-scheme: dark !important;
+  accent-color: #ffffff !important;
+  color: #ffffff !important;
+}
+.biblophani-native-audio::-webkit-media-controls-panel,
+.biblophani-native-audio::-webkit-media-controls-enclosure {
+  background-color: rgba(0, 0, 0, 0) !important;
+}
+.biblophani-native-audio::-webkit-media-controls-current-time-display,
+.biblophani-native-audio::-webkit-media-controls-time-remaining-display {
+  color: #ffffff !important;
+  text-shadow: none !important;
+}
+''';
+  html.document.head?.append(style);
+}
+
 /// Enquanto o configurador de sono está aberto: mantém a barra nativa **visível** (pré-visualização)
 /// mas **sem toque** (`pointer-events: none`) para a outra camada (véu / temporizador) receber os gestos.
 void bibleFmWebSetSleepConfiguratorOpen(bool open) {
@@ -415,21 +444,17 @@ class _WebNativeAudioControlsState extends State<WebNativeAudioControls> {
   void _syncNativeControlsColorScheme() {
     final wrap = _webAudioControlsWrap;
     if (wrap == null || !mounted) return;
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    wrap.style.setProperty('color-scheme', dark ? 'dark' : 'light');
-    if (dark) {
-      wrap.style.removeProperty('background');
-      wrap.style.removeProperty('box-shadow');
-    } else {
-      // Poço premium alinhado à cápsula Flutter (gradiente pérola + bisel interior).
-      wrap.style.setProperty(
-        'background',
-        'linear-gradient(165deg, #ffffff 0%, #faf9f7 45%, #f0eeea 100%)',
-      );
-      wrap.style.setProperty(
-        'box-shadow',
-        'inset 0 1px 0 rgba(255,255,255,0.94), inset 0 -1px 0 rgba(12,10,8,0.06)',
-      );
+    // Sempre escuro: glifos do Chromium claros (branco) sobre painel transparente/independente do tema da app.
+    const scheme = 'dark';
+    wrap.style.setProperty('color-scheme', scheme);
+    wrap.style.setProperty('background', 'transparent');
+    wrap.style.setProperty('box-shadow', 'none');
+    final a = _webBibleFmAudio;
+    if (a != null) {
+      a.style.setProperty('background-color', 'transparent');
+      a.style.setProperty('color-scheme', scheme);
+      a.style.setProperty('accent-color', '#ffffff');
+      a.style.setProperty('color', '#ffffff');
     }
   }
 
@@ -460,24 +485,29 @@ class _WebNativeAudioControlsState extends State<WebNativeAudioControls> {
     _factoryRegistered = true;
     final url = widget.streamUrl;
     ui_web.platformViewRegistry.registerViewFactory(_viewType, (int _) {
+      _ensureAudioControlsChromeCss();
       // preload=none: boa prática para streams contínuos até haver play() (poupa dados).
       final a = html.AudioElement()
         ..controls = true
         ..preload = 'none'
         ..src = url
         ..title = 'BibloPhani'
+        ..className = 'biblophani-native-audio'
         ..setAttribute('aria-label', kBibleFmWebFrNativeAudioAriaLabel)
         ..style.width = '100%'
         ..style.height = '100%'
         ..style.maxHeight = '100%'
-        ..style.display = 'block';
+        ..style.display = 'block'
+        ..style.setProperty('background-color', 'transparent');
       final wrap = html.DivElement()
         ..style.width = '100%'
         ..style.height = '100%'
         ..style.boxSizing = 'border-box'
         ..style.overflow = 'hidden'
         ..style.borderRadius = '14px'
-        ..style.setProperty('color-scheme', 'light')
+        ..style.setProperty('color-scheme', 'dark')
+        ..style.setProperty('background', 'transparent')
+        ..style.setProperty('box-shadow', 'none')
         ..append(a);
       _webAudioControlsWrap = wrap;
       _installWheelRelayOnAudioWrap(wrap);

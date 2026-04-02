@@ -75,7 +75,9 @@ class _WebTransportLayoutSpec {
     final availableW = math.max(0.0, layoutW - hPadLeft - hPadRight);
     final maxContent = wide
         ? math.min(720.0, availableW)
-        : (layoutW >= 600 ? math.min(640.0, availableW) : math.min(560.0, availableW));
+        : (layoutW >= 600
+              ? math.min(640.0, availableW)
+              : math.min(560.0, availableW));
 
     final shortViewport = layoutH > 0 && layoutH < 520;
     final feedbackBelowGap = shortViewport ? 10.0 : (compact ? 12.0 : 16.0);
@@ -84,11 +86,14 @@ class _WebTransportLayoutSpec {
     final padV = narrow ? 5.0 : (compact ? 6.0 : 5.0);
 
     final liveBase = compact ? 48.0 : 46.0;
-    final liveDiameter = (liveBase * cappedScale.clamp(1.0, 1.12)).clamp(44.0, 56.0);
+    final liveDiameter = (liveBase * cappedScale.clamp(1.0, 1.12)).clamp(
+      44.0,
+      56.0,
+    );
 
     final audioBase = compact ? 48.0 : 42.0;
-    final audioControlsHeight =
-        (audioBase * cappedScale.clamp(1.0, 1.18)).clamp(40.0, 56.0);
+    final audioControlsHeight = (audioBase * cappedScale.clamp(1.0, 1.18))
+        .clamp(40.0, 56.0);
 
     final capsuleBase = compact ? 56.0 : 54.0;
     final innerNeeded = math.max(liveDiameter, audioControlsHeight) + 2.0;
@@ -345,10 +350,7 @@ class _WebPlayerScrollBridgeState extends State<_WebPlayerScrollBridge> {
         );
         final compact = layoutW < 440;
 
-        final column = _transportColumn(
-          brightness: brightness,
-          spec: spec,
-        );
+        final column = _transportColumn(brightness: brightness, spec: spec);
 
         final paddedColumn = Padding(
           padding: EdgeInsets.fromLTRB(
@@ -499,78 +501,93 @@ class _WebRealtimeFeedbackLine extends StatelessWidget {
         final showOnAirDot = playing && liveEdge && !reloading;
         final onAirColor = Theme.of(context).colorScheme.error;
         final theme = Theme.of(context);
-        final TextStyle? feedbackStyle = useSmallerType
-            ? theme.textTheme.titleMedium
-            : theme.textTheme.titleLarge;
+        final TextStyle? feedbackStyle =
+            (useSmallerType
+                    ? theme.textTheme.bodySmall
+                    : theme.textTheme.bodyMedium)
+                ?.copyWith(
+                  fontWeight: FontWeight.w400,
+                  height: 1.25,
+                  letterSpacing: 0.12,
+                );
 
-        return Semantics(
-          liveRegion: true,
-          label: msg,
-          child: SizedBox(
-            width: double.infinity,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                if (showOnAirDot) ...[
-                  Container(
-                    width: 9,
-                    height: 9,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: onAirColor,
-                      boxShadow: [
-                        BoxShadow(
-                          color: onAirColor.withValues(alpha: 0.4),
-                          blurRadius: 6,
-                          spreadRadius: 0.5,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                ],
-                Expanded(
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 280),
-                    switchInCurve: Curves.easeOutCubic,
-                    switchOutCurve: Curves.easeInCubic,
-                    layoutBuilder: (current, previous) {
-                      return Stack(
-                        alignment: Alignment.center,
-                        clipBehavior: Clip.none,
-                        children: [...previous, ?current],
-                      );
-                    },
-                    transitionBuilder: (child, animation) {
-                      final pull =
-                          Tween<Offset>(
-                            begin: const Offset(0, 0.22),
-                            end: Offset.zero,
-                          ).animate(
-                            CurvedAnimation(
-                              parent: animation,
-                              curve: Curves.easeOutCubic,
+        final dotReserve = showOnAirDot ? 14.0 : 0.0;
+
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final textMaxW = math.max(0.0, constraints.maxWidth - dotReserve);
+            return Semantics(
+              liveRegion: true,
+              label: msg,
+              child: SizedBox(
+                width: constraints.maxWidth,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    if (showOnAirDot) ...[
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: onAirColor,
+                          boxShadow: [
+                            BoxShadow(
+                              color: onAirColor.withValues(alpha: 0.28),
+                              blurRadius: 4,
+                              spreadRadius: 0,
                             ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: textMaxW),
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 280),
+                        switchInCurve: Curves.easeOutCubic,
+                        switchOutCurve: Curves.easeInCubic,
+                        layoutBuilder: (current, previous) {
+                          return Stack(
+                            alignment: Alignment.center,
+                            clipBehavior: Clip.none,
+                            children: [...previous, ?current],
                           );
-                      return SlideTransition(
-                        position: pull,
-                        child: FadeTransition(opacity: animation, child: child),
-                      );
-                    },
-                    child: Text(
-                      msg,
-                      key: ValueKey<String>(msg),
-                      textAlign: TextAlign.center,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: feedbackStyle?.copyWith(color: color),
+                        },
+                        transitionBuilder: (child, animation) {
+                          final pull =
+                              Tween<Offset>(
+                                begin: const Offset(0, 0.22),
+                                end: Offset.zero,
+                              ).animate(
+                                CurvedAnimation(
+                                  parent: animation,
+                                  curve: Curves.easeOutCubic,
+                                ),
+                              );
+                          return SlideTransition(
+                            position: pull,
+                            child:
+                                FadeTransition(opacity: animation, child: child),
+                          );
+                        },
+                        child: Text(
+                          msg,
+                          key: ValueKey<String>(msg),
+                          textAlign: TextAlign.center,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: feedbackStyle?.copyWith(color: color),
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );
@@ -601,13 +618,9 @@ class _WebLiveStreamButton extends StatelessWidget {
         final reloading = bibleFmWebLiveReloading.value;
         final atLiveEdge = bibleFmWebLiveEdgeActive.value;
         final isLive = playing && atLiveEdge;
-        final isListening = playing && !atLiveEdge;
         final canTap = !reloading && !isLive;
-        final discFill = isLive || reloading
-            ? AppTheme.liveStreamDiscFill(brightness)
-            : isListening
-            ? AppTheme.liveStreamDiscFill(brightness).withValues(alpha: 0.5)
-            : Colors.transparent;
+        // En direct / en écoute / «connexion…» (reloading): disco sempre transparente (anel + ícone/spinner).
+        const discFill = Colors.transparent;
         final ringColor = AppTheme.transportLiveBorder(
           brightness,
         ).withValues(alpha: playing || reloading ? 0.65 : 0.45);
@@ -817,6 +830,7 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
 
           /// Altura útil da pílula H:M + botão (evita sobrepor o teclado no mobile).
           const estimatedSleepPanelHeight = 88.0;
+
           /// Margem mínima entre a pílula e o topo do teclado / borda inferior.
           const keyboardClearance = 10.0;
 
@@ -859,19 +873,27 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
               final screenSize = mq.size;
               final safe = mq.padding;
               final keyboardBottom = mq.viewInsets.bottom;
-              final minScreenPad = math.max(16.0, math.max(safe.left, safe.right));
+              final minScreenPad = math.max(
+                16.0,
+                math.max(safe.left, safe.right),
+              );
               final screenW = screenSize.width;
-              final horizontalGutter =
-                  math.max(48.0, safe.left + safe.right + 24.0);
-              final targetW =
-                  (screenW - horizontalGutter).clamp(280.0, 560.0).toDouble();
+              final horizontalGutter = math.max(
+                48.0,
+                safe.left + safe.right + 24.0,
+              );
+              final targetW = (screenW - horizontalGutter)
+                  .clamp(280.0, 560.0)
+                  .toDouble();
 
               final capsuleBox =
                   _kWebTransportCapsule.currentContext?.findRenderObject()
                       as RenderBox?;
               double top;
               double left;
-              if (capsuleBox != null && capsuleBox.hasSize && capsuleBox.attached) {
+              if (capsuleBox != null &&
+                  capsuleBox.hasSize &&
+                  capsuleBox.attached) {
                 final origin = capsuleBox.localToGlobal(Offset.zero);
                 top = origin.dy + capsuleBox.size.height + gapBelowTransport;
                 left = origin.dx + (capsuleBox.size.width - targetW) / 2;
@@ -879,12 +901,13 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
                   safe.left + 8.0,
                   screenW - targetW - safe.right - 8.0,
                 );
-                final maxTopNoKeyboard = (screenSize.height -
-                        sleepBarViewportReserve -
-                        minScreenPad -
-                        safe.bottom)
-                    .clamp(safe.top + 8.0, double.infinity)
-                    .toDouble();
+                final maxTopNoKeyboard =
+                    (screenSize.height -
+                            sleepBarViewportReserve -
+                            minScreenPad -
+                            safe.bottom)
+                        .clamp(safe.top + 8.0, double.infinity)
+                        .toDouble();
                 top = top.clamp(safe.top + 8.0, maxTopNoKeyboard);
               } else {
                 top = screenSize.height * 0.42;
@@ -896,7 +919,8 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
               }
 
               // Garantir que a pílula fica acima do teclado (área útil = ecrã − insets).
-              final aboveKeyboardTop = screenSize.height -
+              final aboveKeyboardTop =
+                  screenSize.height -
                   keyboardBottom -
                   estimatedSleepPanelHeight -
                   keyboardClearance;
@@ -952,8 +976,12 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
                                   color: Colors.transparent,
                                 ),
                                 child: Padding(
-                                  padding:
-                                      const EdgeInsets.fromLTRB(8, 6, 6, 6),
+                                  padding: const EdgeInsets.fromLTRB(
+                                    8,
+                                    6,
+                                    6,
+                                    6,
+                                  ),
                                   child: _SleepHmSwipeBand(
                                     hoursFocus: hoursFocus,
                                     minutesFocus: minutesFocus,
@@ -1036,6 +1064,7 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
     final iconMain = (h * 0.45).clamp(16.0, 22.0);
     final iconClose = (h * 0.4).clamp(14.0, 18.0);
     final gapSm = (h * 0.1).clamp(3.0, 6.0);
+    final iconInk = AppTheme.liveStreamBroadcastIconColor(brightness);
 
     return Semantics(
       button: true,
@@ -1043,44 +1072,52 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
       child: Tooltip(
         message: hasTimer ? _labelFromRemaining() : kBibleFmWebFrSleepTooltip,
         waitDuration: const Duration(milliseconds: 280),
-        child: InkWell(
-          onTap: _openFromButtonIntent,
-          borderRadius: BorderRadius.circular(radius),
-          child: Container(
-            height: h,
-            padding: EdgeInsets.symmetric(horizontal: padH),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(radius),
-              border: Border.all(color: ring, width: 1),
-              color: hasTimer
-                  ? AppTheme.liveStreamDiscFill(brightness)
-                  : Colors.transparent,
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.timer_outlined, size: iconMain, color: Colors.black),
-                if (hasTimer) ...[
-                  SizedBox(width: gapSm),
-                  Text(
-                    _labelFromRemaining(),
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: Colors.black,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  SizedBox(width: gapSm),
-                  GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: _cancelSleepTimer,
-                    child: Icon(
-                      Icons.close_rounded,
-                      size: iconClose,
-                      color: Colors.black,
-                    ),
-                  ),
-                ],
-              ],
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: _openFromButtonIntent,
+            borderRadius: BorderRadius.circular(radius),
+            hoverColor: AppTheme.liveStreamButtonHover(brightness),
+            splashColor: AppTheme.liveStreamButtonSplash(brightness),
+            highlightColor: null,
+            child: Ink(
+              height: h,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(radius),
+                border: Border.all(color: ring, width: 1),
+                color: Colors.transparent,
+              ),
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: padH),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Icon(Icons.timer_outlined, size: iconMain, color: iconInk),
+                    if (hasTimer) ...[
+                      SizedBox(width: gapSm),
+                      Text(
+                        _labelFromRemaining(),
+                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          color: iconInk,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      SizedBox(width: gapSm),
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: _cancelSleepTimer,
+                        child: Icon(
+                          Icons.close_rounded,
+                          size: iconClose,
+                          color: iconInk,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ),
           ),
         ),
@@ -1472,22 +1509,65 @@ class _SleepActionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final isDark = scheme.brightness == Brightness.dark;
-    final ink = isDark ? const Color(0xFFFAFAFA) : scheme.onSurface;
-    return InkWell(
-      onTap: enabled ? onTap : null,
-      borderRadius: BorderRadius.circular(20),
-      child: Ink(
-        width: 36,
-        height: 36,
-        decoration: const BoxDecoration(
-          shape: BoxShape.circle,
-          color: Colors.transparent,
-        ),
-        child: Icon(
-          cancelMode ? Icons.close_rounded : Icons.check_circle,
-          size: 22,
-          color: enabled ? ink : ink.withValues(alpha: 0.38),
+    final brightness = scheme.brightness;
+    final iconInk = AppTheme.liveStreamBroadcastIconColor(brightness);
+    final mutedRing =
+        AppTheme.transportLiveBorder(brightness).withValues(alpha: 0.28);
+
+    late final Color ringColor;
+    late final Color iconColor;
+    late final IconData iconData;
+    late final double iconSize;
+    late final Color hoverColor;
+    late final Color splashColor;
+
+    if (cancelMode) {
+      ringColor =
+          enabled ? AppTheme.transportCapsuleOutline(brightness) : mutedRing;
+      iconColor = enabled ? iconInk : iconInk.withValues(alpha: 0.38);
+      iconData = Icons.close_rounded;
+      iconSize = 20;
+      hoverColor =
+          enabled ? AppTheme.liveStreamButtonHover(brightness) : Colors.transparent;
+      splashColor =
+          enabled ? AppTheme.liveStreamButtonSplash(brightness) : Colors.transparent;
+    } else {
+      // Confirmar: ícone Material (task_alt, estilo Google) + cor primária.
+      ringColor = enabled ? scheme.primary.withValues(alpha: 0.9) : mutedRing;
+      iconColor =
+          enabled ? scheme.primary : scheme.onSurface.withValues(alpha: 0.38);
+      iconData = Icons.task_alt;
+      iconSize = 22;
+      hoverColor =
+          enabled ? scheme.primary.withValues(alpha: 0.14) : Colors.transparent;
+      splashColor =
+          enabled ? scheme.primary.withValues(alpha: 0.24) : Colors.transparent;
+    }
+
+    const dim = 36.0;
+    final radius = dim / 2;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(radius),
+        hoverColor: hoverColor,
+        splashColor: splashColor,
+        highlightColor: enabled ? null : Colors.transparent,
+        child: Ink(
+          width: dim,
+          height: dim,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.transparent,
+            border: Border.all(color: ringColor, width: 1),
+          ),
+          child: Icon(
+            iconData,
+            size: iconSize,
+            color: iconColor,
+          ),
         ),
       ),
     );

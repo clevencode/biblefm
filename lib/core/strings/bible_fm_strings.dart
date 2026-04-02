@@ -4,16 +4,15 @@ library;
 // --- Página ---
 const String kBibleFmSemanticsPlayerPage = 'BibloPhani, leitor de rádio';
 
-// --- Web: feedback + live (français) ---
-const String kBibleFmWebFrFeedbackReloading = 'Connexion au direct…';
-const String kBibleFmWebFrFeedbackBuffering = 'Chargement du flux…';
-const String kBibleFmWebFrFeedbackLive = 'En direct';
-const String kBibleFmWebFrFeedbackListening = 'En écoute';
-const String kBibleFmWebFrFeedbackPaused = 'En pause';
-const String kBibleFmWebFrFeedbackReady = 'Prêt à écouter';
+// --- Web: feedback + live (français) — minuscules, ultra court ---
+const String kBibleFmWebFrFeedbackReloading = 'connexion…';
+const String kBibleFmWebFrFeedbackBuffering = 'chargement…';
+const String kBibleFmWebFrFeedbackLive = 'direct';
+const String kBibleFmWebFrFeedbackListening = 'écoute';
+const String kBibleFmWebFrFeedbackPaused = 'pause';
+const String kBibleFmWebFrFeedbackReady = 'prêt';
 const String kBibleFmWebFrLiveA11yReloading = 'Reconnexion au direct…';
-const String kBibleFmWebFrLiveTooltipReloading =
-    'Connexion au flux en direct…';
+const String kBibleFmWebFrLiveTooltipReloading = 'Connexion au flux en direct…';
 const String kBibleFmWebFrLiveA11yActive = 'Direct actif';
 const String kBibleFmWebFrLiveTooltipActive = 'Direct actif';
 const String kBibleFmWebFrLiveA11yGoLive = 'Écouter le direct';
@@ -22,6 +21,7 @@ const String kBibleFmWebFrLiveA11yPauseToEnable =
     'Direct : mettre la lecture en pause pour activer';
 const String kBibleFmWebFrLiveTooltipPauseToEnable =
     'Mettre en pause pour pouvoir aller au direct';
+
 /// A11y zone fond : tap = lecture/pause ; long press = direct (aligné bouton live).
 const String kBibleFmWebFrBackgroundGestureA11y =
     'Fond d’écran : touche rapide lecture ou pause ; appui prolongé aller au direct';
@@ -30,6 +30,7 @@ const String kBibleFmWebFrBackgroundGestureA11y =
 /// Attribut [aria-label] sur l’élément `<audio>` (lecteurs d’écran).
 const String kBibleFmWebFrNativeAudioAriaLabel =
     'BibloPhani, flux audio en direct';
+
 /// Semantics Flutter autour du [HtmlElementView] (complement au natif).
 const String kBibleFmWebFrNativeAudioSemanticsLabel =
     'Contrôles audio du navigateur pour BibloPhani';
