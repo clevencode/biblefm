@@ -274,6 +274,7 @@ class _WebPlayerScrollBridgeState extends State<_WebPlayerScrollBridge> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _WebRealtimeFeedbackLine(useSmallerType: spec.feedbackUseSmallerType),
+        _WebListenBufferHintLine(useSmallerType: spec.feedbackUseSmallerType),
         SizedBox(height: spec.feedbackBelowGap),
         RepaintBoundary(
           child: DecoratedBox(
@@ -419,6 +420,162 @@ class _WebPlayerScrollBridgeState extends State<_WebPlayerScrollBridge> {
                   ),
                 ),
               ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Durées lecture retard / fenêtre tampon : secondes si < 1 min, sinon m:ss lisible.
+String _webFmtListenDeltaFr(double sec) {
+  if (!sec.isFinite || sec < 0) return '—';
+  final s = sec.round().clamp(0, 359999);
+  if (s < 60) return '≈ $s s';
+  final m = s ~/ 60;
+  final r = s % 60;
+  return '≈ $m:${r.toString().padLeft(2, '0')}';
+}
+
+class _WebListenBufferHintLine extends StatelessWidget {
+  const _WebListenBufferHintLine({required this.useSmallerType});
+
+  final bool useSmallerType;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: Listenable.merge([
+        bibleFmWebBufferBehindLiveSec,
+        bibleFmWebBufferWindowSec,
+        bibleFmWebLiveEdgeActive,
+        bibleFmWebLiveReloading,
+        bibleFmWebSessionEverStarted,
+      ]),
+      builder: (context, _) {
+        if (!bibleFmWebSessionEverStarted.value ||
+            bibleFmWebLiveReloading.value ||
+            bibleFmWebLiveEdgeActive.value) {
+          return const SizedBox.shrink();
+        }
+        final behind = bibleFmWebBufferBehindLiveSec.value;
+        final window = bibleFmWebBufferWindowSec.value;
+        if (behind == null || window == null || window < 1.0) {
+          return const SizedBox.shrink();
+        }
+
+        final theme = Theme.of(context);
+        final scheme = theme.colorScheme;
+        final variant = scheme.onSurfaceVariant;
+        final dense = useSmallerType;
+        final titleSize = (dense
+                ? theme.textTheme.labelSmall?.fontSize
+                : theme.textTheme.labelMedium?.fontSize) ??
+            11.0;
+        final valueSize = (dense
+                ? theme.textTheme.titleSmall?.fontSize
+                : theme.textTheme.titleMedium?.fontSize) ??
+            15.0;
+
+        final titleStyle = theme.textTheme.labelSmall?.copyWith(
+          fontWeight: FontWeight.w600,
+          fontSize: titleSize,
+          height: 1.15,
+          letterSpacing: 0.2,
+          color: variant.withValues(alpha: 0.88),
+        );
+        final valueStyle = theme.textTheme.titleSmall?.copyWith(
+          fontWeight: FontWeight.w700,
+          fontSize: valueSize,
+          height: 1.2,
+          letterSpacing: 0.1,
+          color: variant,
+        );
+        final hintStyle = theme.textTheme.bodySmall?.copyWith(
+          fontWeight: FontWeight.w400,
+          height: 1.35,
+          fontSize: (theme.textTheme.bodySmall?.fontSize ?? 12) * (dense ? 0.88 : 0.92),
+          color: variant.withValues(alpha: 0.78),
+        );
+
+        final behindV = _webFmtListenDeltaFr(behind);
+        final windowV = _webFmtListenDeltaFr(window);
+        final a11y =
+            '$kBibleFmWebFrListenBufferDelayTitle : $behindV. '
+            '$kBibleFmWebFrListenBufferWindowTitle : $windowV. '
+            '$kBibleFmWebFrListenBufferScrubHint';
+
+        Widget metric({
+          required IconData icon,
+          required String title,
+          required String value,
+        }) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 1),
+                child: Icon(
+                  icon,
+                  size: dense ? 15 : 17,
+                  color: variant.withValues(alpha: 0.82),
+                ),
+              ),
+              SizedBox(width: dense ? 8 : 10),
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: titleStyle,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      value,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: valueStyle,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+        }
+
+        return Semantics(
+          container: true,
+          label: a11y,
+          child: Padding(
+            padding: EdgeInsets.only(top: dense ? 4 : 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                metric(
+                  icon: Icons.schedule_outlined,
+                  title: kBibleFmWebFrListenBufferDelayTitle,
+                  value: behindV,
+                ),
+                SizedBox(height: dense ? 8 : 10),
+                metric(
+                  icon: Icons.swap_horiz_rounded,
+                  title: kBibleFmWebFrListenBufferWindowTitle,
+                  value: windowV,
+                ),
+                SizedBox(height: dense ? 6 : 8),
+                Text(
+                  kBibleFmWebFrListenBufferScrubHint,
+                  textAlign: TextAlign.center,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: hintStyle,
+                ),
+              ],
             ),
           ),
         );

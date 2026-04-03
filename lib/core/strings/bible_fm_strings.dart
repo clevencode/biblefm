@@ -11,6 +11,15 @@ const String kBibleFmWebFrFeedbackLive = 'direct';
 const String kBibleFmWebFrFeedbackListening = 'écoute';
 const String kBibleFmWebFrFeedbackPaused = 'pause';
 const String kBibleFmWebFrFeedbackReady = 'prêt';
+
+/// Mode écoute — titres du bloc d’aide (sous le statut « écoute »).
+const String kBibleFmWebFrListenBufferDelayTitle = 'Décalage avec l’antenne';
+const String kBibleFmWebFrListenBufferWindowTitle =
+    'Marge sur la barre du navigateur';
+
+/// Rappel d’interaction (barre HTML native).
+const String kBibleFmWebFrListenBufferScrubHint =
+    'Glissez pour reculer ou rattraper le direct. Au-delà, retour au « maintenant ».';
 const String kBibleFmWebFrLiveA11yReloading = 'Reconnexion au direct…';
 const String kBibleFmWebFrLiveTooltipReloading = 'Connexion au flux en direct…';
 const String kBibleFmWebFrLiveA11yActive = 'Direct actif';

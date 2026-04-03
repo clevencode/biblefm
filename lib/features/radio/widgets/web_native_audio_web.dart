@@ -14,6 +14,17 @@ const _kWebPlayStartTimeout = Duration(seconds: 12);
 const _kWebLiveSpinnerMin = Duration(milliseconds: 280);
 const _kWebSkipSeekAfterLiveReload = Duration(seconds: 4);
 
+/// Após pausa mais longa que isto, ao dar **play** religa ao servidor com URL nova
+/// (busting + `load()`), evitando ligações HTTP antigas Icecast/servidor e buffer morto.
+const _kWebStaleResumeReconnectAfter = Duration(minutes: 30);
+
+/// Deteção UI «próximo do directo» (feedback, botão live).
+const double _kWebLiveEdgeBufferMarginSec = 2.5;
+
+/// Tecto de `currentTime` relativamente a [buffered.end]: não ultrapassar o «agora» do tampon
+/// (evita scrub/reprodução «além» do live e atraso artificial).
+const double _kWebScrubLiveCeilingEpsilonSec = 0.12;
+
 html.AudioElement? _webBibleFmAudio;
 
 /// Contentor do `HtmlElementView` dos controlos nativos (p.ex. `pointer-events` sob modal do sono).
@@ -213,6 +224,12 @@ final bibleFmWebBuffering = ValueNotifier<bool>(false);
 /// `true` após o primeiro play (distingue pausa de «ainda não iniciou»).
 final bibleFmWebSessionEverStarted = ValueNotifier<bool>(false);
 
+/// Secondes derrière le bord «live» du tampon (mode écoute) ; hors web : stub.
+final bibleFmWebBufferBehindLiveSec = ValueNotifier<double?>(null);
+
+/// Largeur du tampon navigateur (fin − début) en secondes ; hors web : stub.
+final bibleFmWebBufferWindowSec = ValueNotifier<double?>(null);
+
 DateTime? _webPlayingSince;
 Duration _webElapsedPriorSegments = Duration.zero;
 
@@ -223,56 +240,203 @@ Timer? _webSessionTickTimer;
 /// Após [src] novo + [play], evita «seek» para o tempo de sessão (>> buffer) que **parava** o áudio no Chrome.
 DateTime? _webSkipSeekCoalesceUntil;
 
+/// Cada `currentTime = …` feito pela sincronização do relógio dispara `seeked`; ignorar para não tratar como scrub do utilizador.
+int _webProgrammaticTimelineSeekPending = 0;
+
+/// Após a primeira pausa com sessão iniciada: [onPlaying] fica em **en écoute** (sem promover «direct»), até religação explícita ao live.
+bool _webPreferListenModeAfterPause = false;
+
+/// Após [bibleFmWebReloadLiveStream] com sucesso: [onPlaying] alinha «direct» pelo buffer até à **próxima** pausa.
+bool _webForceBufferLiveEdgeOnPlaying = false;
+
 double? _bufferedEndSec(html.AudioElement a) {
   final b = a.buffered;
   if (b.length == 0) return null;
   return b.end(b.length - 1);
 }
 
-/// Limite seguro: nunca pedir `currentTime` acima do que o buffer expõe (streams ao vivo).
+double? _bufferedStartSec(html.AudioElement a) {
+  final b = a.buffered;
+  if (b.length == 0) return null;
+  return b.start(0);
+}
+
+/// Indicador mode écoute : retard sur le direct et taille du tampon (limite du scrub natif).
+void _webUpdateListenBufferNotifiers(html.AudioElement a) {
+  void clear() {
+    bibleFmWebBufferBehindLiveSec.value = null;
+    bibleFmWebBufferWindowSec.value = null;
+  }
+
+  if (!bibleFmWebSessionEverStarted.value ||
+      bibleFmWebLiveReloading.value ||
+      bibleFmWebLiveEdgeActive.value) {
+    clear();
+    return;
+  }
+
+  final end = _bufferedEndSec(a);
+  final start = _bufferedStartSec(a);
+  if (end == null || start == null) {
+    clear();
+    return;
+  }
+  final window = end - start;
+  if (window < 0.3) {
+    clear();
+    return;
+  }
+
+  final behind = end - a.currentTime;
+  if (!behind.isFinite) {
+    clear();
+    return;
+  }
+
+  bibleFmWebBufferWindowSec.value = window;
+  bibleFmWebBufferBehindLiveSec.value = behind.clamp(0.0, window + 60.0);
+}
+
+/// Limite seguro: nunca pedir `currentTime` além do bordo do buffer menos [epsilon] (live).
 double _safeTargetCurrentTimeSec(html.AudioElement a, double sessionSec) {
   final end = _bufferedEndSec(a);
   if (end == null) return sessionSec;
-  return sessionSec <= end ? sessionSec : end;
+  final cap = end - _kWebScrubLiveCeilingEpsilonSec;
+  final lim = cap.isFinite && cap > 0 ? cap : end;
+  if (sessionSec <= lim) return sessionSec;
+  return lim;
+}
+
+void _webAssignCurrentTimeForSync(html.AudioElement a, double seekTo) {
+  try {
+    if ((a.currentTime - seekTo).abs() <= 0.035) return;
+    _webProgrammaticTimelineSeekPending++;
+    a.currentTime = seekTo;
+  } catch (_) {
+    if (_webProgrammaticTimelineSeekPending > 0) {
+      _webProgrammaticTimelineSeekPending--;
+    }
+  }
+}
+
+/// Actualiza «em directo» conforme a posição no buffer (após scrub ou retoma após stall).
+void _webUpdateLiveEdgeFromBufferPosition(html.AudioElement a) {
+  final end = _bufferedEndSec(a);
+  if (end == null) {
+    bibleFmWebLiveEdgeActive.value = true;
+    return;
+  }
+  bibleFmWebLiveEdgeActive.value =
+      (end - a.currentTime) <= _kWebLiveEdgeBufferMarginSec;
+}
+
+void _webResyncSessionClockToSeconds(double t, {required bool paused}) {
+  if (!t.isFinite || t < 0) return;
+  _webElapsedPriorSegments = Duration(microseconds: (t * 1e6).round());
+  if (!paused) {
+    _webPlayingSince = DateTime.now();
+  } else {
+    _webPlayingSince = null;
+  }
+}
+
+/// Alinha o relógio de sessão ao `currentTime` após o utilizador mover a barra (evita o timer anular o scrub).
+void _webResyncSessionClockToAudioPosition(html.AudioElement a) {
+  _webResyncSessionClockToSeconds(
+    a.currentTime.toDouble(),
+    paused: a.paused,
+  );
+}
+
+/// Se o browser permitir scrub fora do tampon Icecast, força [start .. fin−ε] (nunca além do live).
+double? _webScrubClampTargetSec(html.AudioElement a) {
+  final start = _bufferedStartSec(a);
+  final end = _bufferedEndSec(a);
+  if (start == null || end == null) return null;
+  var hi = end - _kWebScrubLiveCeilingEpsilonSec;
+  if (!hi.isFinite || hi < start) hi = start;
+  final t = a.currentTime.toDouble();
+  if (!t.isFinite) return null;
+  const eps = 0.06;
+  if (t < start - eps) return start;
+  if (t > hi + eps) return hi;
+  return null;
+}
+
+void _onWebAudioSeeked(html.AudioElement a) {
+  if (_webProgrammaticTimelineSeekPending > 0) {
+    _webProgrammaticTimelineSeekPending--;
+    return;
+  }
+
+  final clampTo = _webScrubClampTargetSec(a);
+  if (clampTo != null) {
+    _webResyncSessionClockToSeconds(clampTo, paused: a.paused);
+    _webProgrammaticTimelineSeekPending++;
+    try {
+      a.currentTime = clampTo;
+    } catch (_) {
+      _webProgrammaticTimelineSeekPending--;
+      return;
+    }
+    _webUpdateLiveEdgeFromBufferPosition(a);
+    _syncNativeAudioElapsedDisplay();
+    return;
+  }
+
+  _webResyncSessionClockToAudioPosition(a);
+  _webUpdateLiveEdgeFromBufferPosition(a);
+  _syncNativeAudioElapsedDisplay();
 }
 
 /// Expõe o tempo de sessão no **próprio** `currentTime` do `<audio controls>` (reutilização; sem segundo contador).
 void _syncNativeAudioElapsedDisplay() {
   final a = _webBibleFmAudio;
   if (a == null) return;
-  final sessionSec = _webSessionTotalElapsed().inMicroseconds / 1e6;
-  if (!sessionSec.isFinite || sessionSec < 0) return;
+  if (a.seeking) return;
 
-  if (a.paused) {
-    try {
-      final end = _bufferedEndSec(a);
-      if (end == null && sessionSec > 1.5) {
+  try {
+    final sessionSec = _webSessionTotalElapsed().inMicroseconds / 1e6;
+    if (!sessionSec.isFinite || sessionSec < 0) return;
+
+    if (a.paused) {
+      try {
+        final bufEnd = _bufferedEndSec(a);
+        if (bufEnd == null && sessionSec > 1.5) {
+          return;
+        }
+        final target = _safeTargetCurrentTimeSec(a, sessionSec);
+        if ((a.currentTime - target).abs() > 0.04) {
+          _webAssignCurrentTimeForSync(a, target);
+        }
+      } catch (_) {}
+      return;
+    }
+
+    if (_webSkipSeekCoalesceUntil != null &&
+        DateTime.now().isBefore(_webSkipSeekCoalesceUntil!)) {
+      return;
+    }
+
+    final bufEndPlaying = _bufferedEndSec(a);
+    if (bufEndPlaying != null) {
+      final sessionCeiling =
+          bufEndPlaying - _kWebScrubLiveCeilingEpsilonSec + 0.08;
+      if (sessionSec > sessionCeiling) {
         return;
       }
-      final target = _safeTargetCurrentTimeSec(a, sessionSec);
-      if ((a.currentTime - target).abs() > 0.04) {
-        a.currentTime = target;
-      }
-    } catch (_) {}
-    return;
-  }
+    }
 
-  if (_webSkipSeekCoalesceUntil != null &&
-      DateTime.now().isBefore(_webSkipSeekCoalesceUntil!)) {
-    return;
+    final target = _safeTargetCurrentTimeSec(a, sessionSec);
+    final drift = (target - a.currentTime).abs();
+    if (drift <= 1.15) return;
+    _webAssignCurrentTimeForSync(a, target);
+  } finally {
+    final el = _webBibleFmAudio;
+    if (el != null && !el.seeking) {
+      _webUpdateListenBufferNotifiers(el);
+    }
   }
-
-  final end = _bufferedEndSec(a);
-  if (end != null && sessionSec > end + 0.05) {
-    return;
-  }
-
-  final target = _safeTargetCurrentTimeSec(a, sessionSec);
-  final drift = (target - a.currentTime).abs();
-  if (drift <= 1.15) return;
-  try {
-    a.currentTime = target;
-  } catch (_) {}
 }
 
 void _syncWebPlaybackNotifierFrom(html.AudioElement a) {
@@ -310,8 +474,20 @@ void _webStopSessionTick() {
 }
 
 void _onWebAudioPlay(html.AudioElement a) {
+  final pausedSince = _webPausedSince;
+  if (pausedSince != null &&
+      DateTime.now().difference(pausedSince) >= _kWebStaleResumeReconnectAfter) {
+    final base = _webLiveStreamBaseUrl;
+    if (base != null && !bibleFmWebLiveReloading.value) {
+      unawaited(bibleFmWebReloadLiveStream(base).catchError((Object? _) {}));
+      return;
+    }
+  }
+
   bibleFmWebSessionEverStarted.value = true;
-  bibleFmWebBuffering.value = false;
+  // Primeiro play / rede lenta: onPlay pode disparar antes de haver dados; não esconder «chargement» cedo demais.
+  bibleFmWebBuffering.value =
+      a.readyState < html.MediaElement.HAVE_CURRENT_DATA;
   _webPlayingSince ??= DateTime.now();
   _webPausedSince = null;
   _syncWebPlaybackNotifierFrom(a);
@@ -323,6 +499,10 @@ void _onWebAudioPlay(html.AudioElement a) {
 void _onWebAudioPauseOrEnd(html.AudioElement a) {
   bibleFmWebBuffering.value = false;
   bibleFmWebLiveEdgeActive.value = false;
+  _webForceBufferLiveEdgeOnPlaying = false;
+  if (bibleFmWebSessionEverStarted.value) {
+    _webPreferListenModeAfterPause = true;
+  }
   _webFoldPlayingSegment();
   _webPausedSince = DateTime.now();
   _webStopSessionTick();
@@ -406,12 +586,14 @@ Future<void> bibleFmWebReloadLiveStream(String baseUrl) async {
     el.load();
     _webSkipSeekCoalesceUntil =
         DateTime.now().add(_kWebSkipSeekAfterLiveReload);
+    _webForceBufferLiveEdgeOnPlaying = true;
     try {
       await _webPlayWithAutoplayPolicy(el);
       await _webAwaitPlayActuallyStarted(el);
       bibleFmWebLiveEdgeActive.value = !el.paused;
       _syncWebMediaSessionPlaybackState(el);
     } catch (_) {
+      _webForceBufferLiveEdgeOnPlaying = false;
       bibleFmWebLiveEdgeActive.value = false;
       _syncWebPlaybackNotifierFrom(el);
       _syncWebMediaSessionPlaybackState(el);
@@ -486,10 +668,10 @@ class _WebNativeAudioControlsState extends State<WebNativeAudioControls> {
     final url = widget.streamUrl;
     ui_web.platformViewRegistry.registerViewFactory(_viewType, (int _) {
       _ensureAudioControlsChromeCss();
-      // preload=none: boa prática para streams contínuos até haver play() (poupa dados).
+      // metadata: negocia sessão / metadados cedo sem descarregar o fluxo inteiro — primeiro play em geral mais rápido que none.
       final a = html.AudioElement()
         ..controls = true
-        ..preload = 'none'
+        ..preload = 'metadata'
         ..src = url
         ..title = 'Bibliofani'
         ..className = 'bibliofani-native-audio'
@@ -527,9 +709,37 @@ class _WebNativeAudioControlsState extends State<WebNativeAudioControls> {
       });
       a.onPlaying.listen((_) {
         bibleFmWebBuffering.value = false;
+        if (_webForceBufferLiveEdgeOnPlaying) {
+          _webUpdateLiveEdgeFromBufferPosition(a);
+        } else if (_webPreferListenModeAfterPause) {
+          bibleFmWebLiveEdgeActive.value = false;
+        } else {
+          _webUpdateLiveEdgeFromBufferPosition(a);
+        }
+        _webUpdateListenBufferNotifiers(a);
       });
+      a.onTimeUpdate.listen((_) {
+        final el = _webBibleFmAudio;
+        if (el == null || el.seeking) return;
+        _webUpdateListenBufferNotifiers(el);
+        final clampTo = _webScrubClampTargetSec(el);
+        if (clampTo != null) {
+          _webResyncSessionClockToSeconds(clampTo, paused: el.paused);
+          _webProgrammaticTimelineSeekPending++;
+          try {
+            el.currentTime = clampTo;
+          } catch (_) {
+            _webProgrammaticTimelineSeekPending--;
+          }
+          _webUpdateLiveEdgeFromBufferPosition(el);
+        }
+      });
+      a.onSeeked.listen((_) => _onWebAudioSeeked(a));
       a.onError.listen((_) {
         bibleFmWebBuffering.value = false;
+        bibleFmWebLiveEdgeActive.value = false;
+        bibleFmWebBufferBehindLiveSec.value = null;
+        bibleFmWebBufferWindowSec.value = null;
         _syncWebPlaybackNotifierFrom(a);
         _syncWebMediaSessionPlaybackState(a);
       });
