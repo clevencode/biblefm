@@ -12,14 +12,15 @@ const String kBibleFmWebFrFeedbackListening = 'écoute';
 const String kBibleFmWebFrFeedbackPaused = 'pause';
 const String kBibleFmWebFrFeedbackReady = 'prêt';
 
-/// Mode écoute — titres du bloc d’aide (sous le statut « écoute »).
-const String kBibleFmWebFrListenBufferDelayTitle = 'Décalage avec l’antenne';
-const String kBibleFmWebFrListenBufferWindowTitle =
-    'Marge sur la barre du navigateur';
+/// Pause alors qu’on était au direct : combien le flux a avancé sur le serveur.
+const String kBibleFmWebFrPauseLiveDriftTitle =
+    'Antenne avancée pendant la pause';
+const String kBibleFmWebFrPauseLiveDriftHint =
+    'Le direct continue sur le serveur. Reprenez la lecture ou rapprochez-vous du « maintenant » sur la barre.';
 
-/// Rappel d’interaction (barre HTML native).
+/// Rappel d’interaction (barre HTML native + sauts ±30 s, fenêtre logique ~30 s près du direct).
 const String kBibleFmWebFrListenBufferScrubHint =
-    'Glissez pour reculer ou rattraper le direct. Au-delà, retour au « maintenant ».';
+    'Glissez ou utilisez ±30 s pour reculer ou rattraper le direct (environ 30 secondes près du « maintenant », selon le navigateur). Au-delà, retour au direct.';
 const String kBibleFmWebFrLiveA11yReloading = 'Reconnexion au direct…';
 const String kBibleFmWebFrLiveTooltipReloading = 'Connexion au flux en direct…';
 const String kBibleFmWebFrLiveA11yActive = 'Direct actif';
@@ -54,3 +55,9 @@ const String kBibleFmWebFrSleepInputHint = 'Saisir la durée';
 const String kBibleFmWebFrSleepPlaceholderDigits = '00';
 const String kBibleFmWebFrSleepLabelHeure = 'heure';
 const String kBibleFmWebFrSleepLabelMinute = 'minute';
+
+// --- Web: saut ±30 s (barre sous la capsule) ---
+const String kBibleFmWebFrSeekBack30Semantics = 'Reculer de 30 secondes';
+const String kBibleFmWebFrSeekBack30Tooltip = 'Reculer de 30 secondes';
+const String kBibleFmWebFrSeekForward30Semantics = 'Avancer de 30 secondes';
+const String kBibleFmWebFrSeekForward30Tooltip = 'Avancer de 30 secondes';

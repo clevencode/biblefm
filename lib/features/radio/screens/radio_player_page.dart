@@ -34,6 +34,9 @@ class _WebTransportLayoutSpec {
     required this.audioControlsHeight,
     required this.gapLiveAudio,
     required this.gapAudioSleep,
+    required this.skipRowTopGap,
+    required this.skipPillHeight,
+    required this.skipPillGap,
     required this.showDesktopScrollbars,
     required this.feedbackUseSmallerType,
   });
@@ -50,6 +53,9 @@ class _WebTransportLayoutSpec {
   final double audioControlsHeight;
   final double gapLiveAudio;
   final double gapAudioSleep;
+  final double skipRowTopGap;
+  final double skipPillHeight;
+  final double skipPillGap;
   final bool showDesktopScrollbars;
   final bool feedbackUseSmallerType;
 
@@ -107,6 +113,10 @@ class _WebTransportLayoutSpec {
     final gapLiveAudio = narrow ? 8.0 : 10.0;
     final gapAudioSleep = narrow ? 6.0 : 8.0;
 
+    final skipRowTopGap = narrow ? 8.0 : (compact ? 10.0 : 12.0);
+    final skipPillHeight = (audioControlsHeight * 0.88).clamp(38.0, 50.0);
+    final skipPillGap = narrow ? 8.0 : 10.0;
+
     final vPad = compact ? 6.0 : (shortViewport ? 4.0 : 10.0);
 
     return _WebTransportLayoutSpec(
@@ -122,6 +132,9 @@ class _WebTransportLayoutSpec {
       audioControlsHeight: audioControlsHeight,
       gapLiveAudio: gapLiveAudio,
       gapAudioSleep: gapAudioSleep,
+      skipRowTopGap: skipRowTopGap,
+      skipPillHeight: skipPillHeight,
+      skipPillGap: skipPillGap,
       showDesktopScrollbars: !compact && layoutW >= 520,
       feedbackUseSmallerType: layoutW < 380 || cappedScale > 1.15,
     );
@@ -314,6 +327,12 @@ class _WebPlayerScrollBridgeState extends State<_WebPlayerScrollBridge> {
             ),
           ),
         ),
+        SizedBox(height: spec.skipRowTopGap),
+        _WebSkipThirtyRow(
+          brightness: brightness,
+          pillHeight: spec.skipPillHeight,
+          pillGap: spec.skipPillGap,
+        ),
       ],
     );
   }
@@ -428,6 +447,129 @@ class _WebPlayerScrollBridgeState extends State<_WebPlayerScrollBridge> {
   }
 }
 
+/// Deux pastilles ±30 s sous la capsule de transport (même style de contour).
+class _WebSkipThirtyRow extends StatelessWidget {
+  const _WebSkipThirtyRow({
+    required this.brightness,
+    required this.pillHeight,
+    required this.pillGap,
+  });
+
+  final Brightness brightness;
+  final double pillHeight;
+  final double pillGap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: Listenable.merge([
+        bibleFmWebSessionEverStarted,
+        bibleFmWebLiveReloading,
+      ]),
+      builder: (context, _) {
+        final enabled =
+            bibleFmWebSessionEverStarted.value &&
+            !bibleFmWebLiveReloading.value;
+        final scheme = Theme.of(context).colorScheme;
+        final ring = AppTheme.transportLiveBorder(
+          brightness,
+        ).withValues(alpha: enabled ? 0.55 : 0.28);
+        final ink = enabled
+            ? AppTheme.liveStreamBroadcastIconColor(brightness)
+            : scheme.onSurface.withValues(alpha: 0.38);
+        final iconSize = (pillHeight * 0.42).clamp(18.0, 24.0);
+        final labelStyle = Theme.of(context).textTheme.labelLarge?.copyWith(
+          color: ink,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.15,
+          height: 1.0,
+        );
+        final gapTextIcon = (pillHeight * 0.12).clamp(5.0, 8.0);
+
+        Widget pill({
+          required String semantics,
+          required String tooltip,
+          required VoidCallback onTap,
+          required List<Widget> rowChildren,
+        }) {
+          return Expanded(
+            child: Semantics(
+              button: true,
+              enabled: enabled,
+              label: semantics,
+              child: Tooltip(
+                message: tooltip,
+                waitDuration: const Duration(milliseconds: 320),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: !enabled
+                        ? null
+                        : () {
+                            HapticFeedback.lightImpact();
+                            onTap();
+                          },
+                    borderRadius: BorderRadius.circular(pillHeight / 2),
+                    hoverColor: enabled
+                        ? AppTheme.liveStreamButtonHover(brightness)
+                        : Colors.transparent,
+                    splashColor: enabled
+                        ? AppTheme.liveStreamButtonSplash(brightness)
+                        : Colors.transparent,
+                    highlightColor: enabled ? null : Colors.transparent,
+                    child: Ink(
+                      height: pillHeight,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(pillHeight / 2),
+                        border: Border.all(color: ring, width: 1),
+                        color: Colors.transparent,
+                      ),
+                      child: Center(
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: rowChildren,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            pill(
+              semantics: kBibleFmWebFrSeekBack30Semantics,
+              tooltip: kBibleFmWebFrSeekBack30Tooltip,
+              onTap: () => bibleFmWebSeekRelativeSeconds(-30),
+              rowChildren: [
+                Text('30s', style: labelStyle),
+                SizedBox(width: gapTextIcon),
+                Icon(Icons.replay_rounded, size: iconSize, color: ink),
+              ],
+            ),
+            SizedBox(width: pillGap),
+            pill(
+              semantics: kBibleFmWebFrSeekForward30Semantics,
+              tooltip: kBibleFmWebFrSeekForward30Tooltip,
+              onTap: () => bibleFmWebSeekRelativeSeconds(30),
+              rowChildren: [
+                Icon(Icons.forward_rounded, size: iconSize, color: ink),
+                SizedBox(width: gapTextIcon),
+                Text('30s', style: labelStyle),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
 /// Durées lecture retard / fenêtre tampon : secondes si < 1 min, sinon m:ss lisible.
 String _webFmtListenDeltaFr(double sec) {
   if (!sec.isFinite || sec < 0) return '—';
@@ -436,6 +578,107 @@ String _webFmtListenDeltaFr(double sec) {
   final m = s ~/ 60;
   final r = s % 60;
   return '≈ $m:${r.toString().padLeft(2, '0')}';
+}
+
+Widget _webPauseLiveDriftBlock({
+  required BuildContext context,
+  required bool useSmallerType,
+  required double driftSec,
+}) {
+  final theme = Theme.of(context);
+  final scheme = theme.colorScheme;
+  final variant = scheme.onSurfaceVariant;
+  final dense = useSmallerType;
+  final titleSize =
+      (dense
+          ? theme.textTheme.labelSmall?.fontSize
+          : theme.textTheme.labelMedium?.fontSize) ??
+      11.0;
+  final valueSize =
+      (dense
+          ? theme.textTheme.titleSmall?.fontSize
+          : theme.textTheme.titleMedium?.fontSize) ??
+      15.0;
+  final titleStyle = theme.textTheme.labelSmall?.copyWith(
+    fontWeight: FontWeight.w600,
+    fontSize: titleSize,
+    height: 1.15,
+    letterSpacing: 0.2,
+    color: variant.withValues(alpha: 0.88),
+  );
+  final valueStyle = theme.textTheme.titleSmall?.copyWith(
+    fontWeight: FontWeight.w700,
+    fontSize: valueSize,
+    height: 1.2,
+    letterSpacing: 0.1,
+    color: variant,
+  );
+  final hintStyle = theme.textTheme.bodySmall?.copyWith(
+    fontWeight: FontWeight.w400,
+    height: 1.35,
+    fontSize:
+        (theme.textTheme.bodySmall?.fontSize ?? 12) * (dense ? 0.88 : 0.92),
+    color: variant.withValues(alpha: 0.78),
+  );
+  final driftV = _webFmtListenDeltaFr(driftSec);
+  final a11y =
+      '$kBibleFmWebFrPauseLiveDriftTitle : $driftV. $kBibleFmWebFrPauseLiveDriftHint';
+
+  return Semantics(
+    container: true,
+    label: a11y,
+    child: Padding(
+      padding: EdgeInsets.only(top: dense ? 4 : 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 1),
+                child: Icon(
+                  Icons.podcasts_outlined,
+                  size: dense ? 15 : 17,
+                  color: variant.withValues(alpha: 0.82),
+                ),
+              ),
+              SizedBox(width: dense ? 8 : 10),
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      kBibleFmWebFrPauseLiveDriftTitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: titleStyle,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      driftV,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: valueStyle,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: dense ? 6 : 8),
+          Text(
+            kBibleFmWebFrPauseLiveDriftHint,
+            textAlign: TextAlign.center,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: hintStyle,
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _WebListenBufferHintLine extends StatelessWidget {
@@ -447,21 +690,33 @@ class _WebListenBufferHintLine extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: Listenable.merge([
-        bibleFmWebBufferBehindLiveSec,
-        bibleFmWebBufferWindowSec,
         bibleFmWebLiveEdgeActive,
         bibleFmWebLiveReloading,
         bibleFmWebSessionEverStarted,
+        bibleFmWebLiveMovedWhilePausedSec,
+        bibleFmWebPlaybackActive,
       ]),
       builder: (context, _) {
         if (!bibleFmWebSessionEverStarted.value ||
-            bibleFmWebLiveReloading.value ||
-            bibleFmWebLiveEdgeActive.value) {
+            bibleFmWebLiveReloading.value) {
           return const SizedBox.shrink();
         }
-        final behind = bibleFmWebBufferBehindLiveSec.value;
-        final window = bibleFmWebBufferWindowSec.value;
-        if (behind == null || window == null || window < 1.0) {
+
+        final driftSec = bibleFmWebLiveMovedWhilePausedSec.value;
+        final pausedUi = !bibleFmWebPlaybackActive.value;
+        if (pausedUi && driftSec != null && driftSec.isFinite) {
+          return _webPauseLiveDriftBlock(
+            context: context,
+            useSmallerType: useSmallerType,
+            driftSec: driftSec,
+          );
+        }
+
+        if (bibleFmWebLiveEdgeActive.value) {
+          return const SizedBox.shrink();
+        }
+
+        if (!bibleFmWebPlaybackActive.value) {
           return const SizedBox.shrink();
         }
 
@@ -469,113 +724,26 @@ class _WebListenBufferHintLine extends StatelessWidget {
         final scheme = theme.colorScheme;
         final variant = scheme.onSurfaceVariant;
         final dense = useSmallerType;
-        final titleSize = (dense
-                ? theme.textTheme.labelSmall?.fontSize
-                : theme.textTheme.labelMedium?.fontSize) ??
-            11.0;
-        final valueSize = (dense
-                ? theme.textTheme.titleSmall?.fontSize
-                : theme.textTheme.titleMedium?.fontSize) ??
-            15.0;
-
-        final titleStyle = theme.textTheme.labelSmall?.copyWith(
-          fontWeight: FontWeight.w600,
-          fontSize: titleSize,
-          height: 1.15,
-          letterSpacing: 0.2,
-          color: variant.withValues(alpha: 0.88),
-        );
-        final valueStyle = theme.textTheme.titleSmall?.copyWith(
-          fontWeight: FontWeight.w700,
-          fontSize: valueSize,
-          height: 1.2,
-          letterSpacing: 0.1,
-          color: variant,
-        );
         final hintStyle = theme.textTheme.bodySmall?.copyWith(
           fontWeight: FontWeight.w400,
           height: 1.35,
-          fontSize: (theme.textTheme.bodySmall?.fontSize ?? 12) * (dense ? 0.88 : 0.92),
+          fontSize:
+              (theme.textTheme.bodySmall?.fontSize ?? 12) *
+              (dense ? 0.88 : 0.92),
           color: variant.withValues(alpha: 0.78),
         );
 
-        final behindV = _webFmtListenDeltaFr(behind);
-        final windowV = _webFmtListenDeltaFr(window);
-        final a11y =
-            '$kBibleFmWebFrListenBufferDelayTitle : $behindV. '
-            '$kBibleFmWebFrListenBufferWindowTitle : $windowV. '
-            '$kBibleFmWebFrListenBufferScrubHint';
-
-        Widget metric({
-          required IconData icon,
-          required String title,
-          required String value,
-        }) {
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(top: 1),
-                child: Icon(
-                  icon,
-                  size: dense ? 15 : 17,
-                  color: variant.withValues(alpha: 0.82),
-                ),
-              ),
-              SizedBox(width: dense ? 8 : 10),
-              Flexible(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: titleStyle,
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      value,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: valueStyle,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          );
-        }
-
         return Semantics(
           container: true,
-          label: a11y,
+          label: kBibleFmWebFrListenBufferScrubHint,
           child: Padding(
             padding: EdgeInsets.only(top: dense ? 4 : 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                metric(
-                  icon: Icons.schedule_outlined,
-                  title: kBibleFmWebFrListenBufferDelayTitle,
-                  value: behindV,
-                ),
-                SizedBox(height: dense ? 8 : 10),
-                metric(
-                  icon: Icons.swap_horiz_rounded,
-                  title: kBibleFmWebFrListenBufferWindowTitle,
-                  value: windowV,
-                ),
-                SizedBox(height: dense ? 6 : 8),
-                Text(
-                  kBibleFmWebFrListenBufferScrubHint,
-                  textAlign: TextAlign.center,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: hintStyle,
-                ),
-              ],
+            child: Text(
+              kBibleFmWebFrListenBufferScrubHint,
+              textAlign: TextAlign.center,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: hintStyle,
             ),
           ),
         );
@@ -728,8 +896,10 @@ class _WebRealtimeFeedbackLine extends StatelessWidget {
                               );
                           return SlideTransition(
                             position: pull,
-                            child:
-                                FadeTransition(opacity: animation, child: child),
+                            child: FadeTransition(
+                              opacity: animation,
+                              child: child,
+                            ),
                           );
                         },
                         child: Text(
@@ -1258,10 +1428,11 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
                       SizedBox(width: gapSm),
                       Text(
                         _labelFromRemaining(),
-                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                          color: iconInk,
-                          fontWeight: FontWeight.w600,
-                        ),
+                        style: Theme.of(context).textTheme.labelMedium
+                            ?.copyWith(
+                              color: iconInk,
+                              fontWeight: FontWeight.w600,
+                            ),
                       ),
                       SizedBox(width: gapSm),
                       GestureDetector(
@@ -1656,10 +1827,7 @@ class _SleepHmUnderlineFieldsState extends State<_SleepHmUnderlineFields> {
 
 /// Confirmar temporizador (task_alt + cor primária).
 class _SleepApplyButton extends StatelessWidget {
-  const _SleepApplyButton({
-    this.enabled = true,
-    required this.onTap,
-  });
+  const _SleepApplyButton({this.enabled = true, required this.onTap});
 
   final bool enabled;
   final VoidCallback onTap;
@@ -1668,12 +1836,15 @@ class _SleepApplyButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final brightness = scheme.brightness;
-    final mutedRing =
-        AppTheme.transportLiveBorder(brightness).withValues(alpha: 0.28);
-    final ringColor =
-        enabled ? scheme.primary.withValues(alpha: 0.9) : mutedRing;
-    final iconColor =
-        enabled ? scheme.primary : scheme.onSurface.withValues(alpha: 0.38);
+    final mutedRing = AppTheme.transportLiveBorder(
+      brightness,
+    ).withValues(alpha: 0.28);
+    final ringColor = enabled
+        ? scheme.primary.withValues(alpha: 0.9)
+        : mutedRing;
+    final iconColor = enabled
+        ? scheme.primary
+        : scheme.onSurface.withValues(alpha: 0.38);
     const dim = 36.0;
     final radius = dim / 2;
 
@@ -1682,10 +1853,12 @@ class _SleepApplyButton extends StatelessWidget {
       child: InkWell(
         onTap: enabled ? onTap : null,
         borderRadius: BorderRadius.circular(radius),
-        hoverColor:
-            enabled ? scheme.primary.withValues(alpha: 0.14) : Colors.transparent,
-        splashColor:
-            enabled ? scheme.primary.withValues(alpha: 0.24) : Colors.transparent,
+        hoverColor: enabled
+            ? scheme.primary.withValues(alpha: 0.14)
+            : Colors.transparent,
+        splashColor: enabled
+            ? scheme.primary.withValues(alpha: 0.24)
+            : Colors.transparent,
         highlightColor: enabled ? null : Colors.transparent,
         child: Ink(
           width: dim,
@@ -1695,11 +1868,7 @@ class _SleepApplyButton extends StatelessWidget {
             color: Colors.transparent,
             border: Border.all(color: ringColor, width: 1),
           ),
-          child: Icon(
-            Icons.task_alt,
-            size: 22,
-            color: iconColor,
-          ),
+          child: Icon(Icons.task_alt, size: 22, color: iconColor),
         ),
       ),
     );

@@ -24,6 +24,9 @@ void bibleFmWebDetachScrollBridge() {}
 /// Fora da web: sem-op.
 void bibleFmWebBackgroundLongPressGoLive() {}
 
+/// Fora da web: sem-op.
+void bibleFmWebSeekRelativeSeconds(double deltaSec) {}
+
 /// Fora de `dart:html` mantém-se em false (testes / análise VM).
 final bibleFmWebPlaybackActive = ValueNotifier<bool>(false);
 
@@ -39,11 +42,8 @@ final bibleFmWebBuffering = ValueNotifier<bool>(false);
 /// Fora da web não actualiza.
 final bibleFmWebSessionEverStarted = ValueNotifier<bool>(false);
 
-/// Secondes derrière le bord «live» du tampon (mode écoute) ; null si N/A.
-final bibleFmWebBufferBehindLiveSec = ValueNotifier<double?>(null);
-
-/// Largeur du tampon navigateur (fin − début) en secondes ; null si N/A.
-final bibleFmWebBufferWindowSec = ValueNotifier<double?>(null);
+/// Avance du bord live (buffer) depuis une pause au direct ; null si N/A.
+final bibleFmWebLiveMovedWhilePausedSec = ValueNotifier<double?>(null);
 
 /// Implementação vazia (não web). Ver `web_native_audio_web.dart`.
 class WebNativeAudioControls extends StatelessWidget {
