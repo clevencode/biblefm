@@ -45,12 +45,12 @@ html.DivElement? _webAudioControlsWrap;
 String? _webLiveStreamBaseUrl;
 
 /// Estilos para `::-webkit-media-controls-*`: fundo do painel nativo transparente (contorno fica no Flutter).
-const _kAudioChromeStyleId = 'bibliofani-audio-chrome-style-v3';
+const _kAudioChromeStyleId = 'biblofani-audio-chrome-style-v1';
 
-/// Script injectado: o getter `duration` do `<audio class="bibliofani-native-audio">` devolve um valor
+/// Script injectado: o getter `duration` do `<audio class="biblofani-native-audio">` devolve um valor
 /// **finito** a partir de `buffered.end` (alinhado a [_kWebScrubLiveCeilingEpsilonSec]) em **play e pause**.
 /// Assim a barra nativa do Chrome não permite arrastar «além» do bordo live (`duration` infinito no HLS/Icecast).
-const _kLiveDurationHookScriptId = 'bibliofani-duration-hook-script-v3';
+const _kLiveDurationHookScriptId = 'biblofani-duration-hook-script-v1';
 
 void _ensureLiveDurationHookScript() {
   if (html.document.getElementById(_kLiveDurationHookScriptId) != null) {
@@ -61,7 +61,7 @@ void _ensureLiveDurationHookScript() {
     ..type = 'text/javascript'
     ..text = r'''
 (function(w) {
-  var HOOK_VER = 3;
+  var HOOK_VER = 4;
   if (w.__bfmLiveDurHookVer === HOOK_VER) return;
   if (w.__bfmLiveDurTimer) {
     clearInterval(w.__bfmLiveDurTimer);
@@ -69,7 +69,7 @@ void _ensureLiveDurationHookScript() {
   }
   w.__bfmLiveDurHookVer = HOOK_VER;
   try {
-    var oldA = document.querySelector('.bibliofani-native-audio');
+    var oldA = document.querySelector('.biblofani-native-audio');
     if (oldA && oldA.__bfmDurationHooked) {
       delete oldA.duration;
       oldA.__bfmDurationHooked = false;
@@ -108,7 +108,7 @@ void _ensureLiveDurationHookScript() {
     });
   }
   function tick() {
-    var a = document.querySelector('.bibliofani-native-audio');
+    var a = document.querySelector('.biblofani-native-audio');
     if (!a) return;
     install(a);
   }
@@ -126,18 +126,18 @@ void _ensureAudioControlsChromeCss() {
   final style = html.StyleElement()
     ..id = _kAudioChromeStyleId
     ..text = '''
-.bibliofani-native-audio {
+.biblofani-native-audio {
   background-color: transparent !important;
   color-scheme: dark !important;
   accent-color: #ffffff !important;
   color: #ffffff !important;
 }
-.bibliofani-native-audio::-webkit-media-controls-panel,
-.bibliofani-native-audio::-webkit-media-controls-enclosure {
+.biblofani-native-audio::-webkit-media-controls-panel,
+.biblofani-native-audio::-webkit-media-controls-enclosure {
   background-color: rgba(0, 0, 0, 0) !important;
 }
-.bibliofani-native-audio::-webkit-media-controls-current-time-display,
-.bibliofani-native-audio::-webkit-media-controls-time-remaining-display {
+.biblofani-native-audio::-webkit-media-controls-current-time-display,
+.biblofani-native-audio::-webkit-media-controls-time-remaining-display {
   color: #ffffff !important;
   text-shadow: none !important;
 }
@@ -218,7 +218,7 @@ void _installWebMediaSession(html.AudioElement a) {
   if (ms == null) return;
   try {
     ms.metadata = html.MediaMetadata({
-      'title': 'Bibliofani',
+      'title': 'biblofani',
       'artist': 'En direct',
       'album': 'Radio',
     });
@@ -838,7 +838,7 @@ class WebNativeAudioControls extends StatefulWidget {
 }
 
 class _WebNativeAudioControlsState extends State<WebNativeAudioControls> {
-  static const String _viewType = 'bibliofani-chrome-audio';
+  static const String _viewType = 'biblofani-chrome-audio';
   static bool _factoryRegistered = false;
 
   void _syncNativeControlsColorScheme() {
@@ -891,8 +891,8 @@ class _WebNativeAudioControlsState extends State<WebNativeAudioControls> {
         ..controls = true
         ..preload = 'metadata'
         ..src = url
-        ..title = 'Bibliofani'
-        ..className = 'bibliofani-native-audio'
+        ..title = 'biblofani'
+        ..className = 'biblofani-native-audio'
         ..setAttribute('aria-label', kBibleFmWebFrNativeAudioAriaLabel)
         ..style.width = '100%'
         ..style.height = '100%'

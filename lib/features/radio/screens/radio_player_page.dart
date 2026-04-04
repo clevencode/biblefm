@@ -141,7 +141,7 @@ class _WebTransportLayoutSpec {
   }
 }
 
-/// Bibliofani — leitor **apenas Web** (`<audio controls>` + botão directo).
+/// biblofani — leitor **apenas Web** (`<audio controls>` + botão directo).
 class RadioPlayerPage extends StatelessWidget {
   const RadioPlayerPage({super.key});
 

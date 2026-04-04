@@ -8,7 +8,7 @@
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta http-equiv="Content-Language" content="fr">
 
-  <title>Bibliofani — Radio en direct | Web</title>
+  <title>biblofani — Radio en direct | Web</title>
   <meta name="description" content="Écoutez la parole de Dieu en direct chaque jour pour édifier votre foi et s'affermir dans la vérité. Music : Martia Muse">
   <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
   <meta name="googlebot" content="index, follow">
@@ -19,10 +19,10 @@
   <link rel="alternate" href="https://clevencode.github.io/bibliofani/" hreflang="x-default">
 
   <meta property="og:type" content="website">
-  <meta property="og:title" content="Bibliofani — Web Radio">
+  <meta property="og:title" content="biblofani — Web Radio">
   <meta property="og:description" content="Écoutez la parole de Dieu en direct chaque jour pour édifier votre foi et s'affermir dans la vérité. Music : Martia Muse">
   <meta property="og:url" content="https://clevencode.github.io/bibliofani/">
-  <meta property="og:site_name" content="Bibliofani">
+  <meta property="og:site_name" content="biblofani">
   <meta property="og:locale" content="fr_FR">
   <meta property="og:image" content="https://clevencode.github.io/bibliofani/icons/Icon-512.png">
   <meta property="og:image:type" content="image/png">
@@ -30,7 +30,7 @@
   <meta property="og:image:height" content="512">
 
   <meta name="twitter:card" content="summary">
-  <meta name="twitter:title" content="Bibliofani — Web Radio">
+  <meta name="twitter:title" content="biblofani — Web Radio">
   <meta name="twitter:description" content="Écoutez la parole de Dieu en direct chaque jour pour édifier votre foi et s'affermir dans la vérité. Music : Martia Muse">
   <meta name="twitter:image" content="https://clevencode.github.io/bibliofani/icons/Icon-512.png">
 
@@ -41,7 +41,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="Bibliofani">
+  <meta name="apple-mobile-web-app-title" content="biblofani">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
   <link rel="icon" type="image/png" href="favicon.png">
@@ -62,7 +62,7 @@
   <!-- viewport-fit: entallages iOS ; interactive-widget: clavier Android não esmaga o layout de forma surprenante -->
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 
-  <script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"WebSite","@id":"https://clevencode.github.io/bibliofani/#website","name":"Bibliofani","url":"https://clevencode.github.io/bibliofani/","description":"Lecteur web Bibliofani : streaming audio en direct dans le navigateur.","inLanguage":"fr-FR","publisher":{"@id":"https://clevencode.github.io/bibliofani/#org"}},{"@type":"Organization","@id":"https://clevencode.github.io/bibliofani/#org","name":"Bibliofani","url":"https://clevencode.github.io/bibliofani/"},{"@type":"WebApplication","name":"Bibliofani","url":"https://clevencode.github.io/bibliofani/","applicationCategory":"EntertainmentApplication","operatingSystem":"Web","inLanguage":"fr-FR","isAccessibleForFree":true,"browserRequirements":"Requires JavaScript. HTML5 audio.","description":"Lecteur de radio Bibliofani pour le web : direct, contrôles audio et minuteur de sommeil.","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}]}</script>
+  <script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"WebSite","@id":"https://clevencode.github.io/bibliofani/#website","name":"biblofani","url":"https://clevencode.github.io/bibliofani/","description":"Lecteur web biblofani : streaming audio en direct dans le navigateur.","inLanguage":"fr-FR","publisher":{"@id":"https://clevencode.github.io/bibliofani/#org"}},{"@type":"Organization","@id":"https://clevencode.github.io/bibliofani/#org","name":"biblofani","url":"https://clevencode.github.io/bibliofani/"},{"@type":"WebApplication","name":"biblofani","url":"https://clevencode.github.io/bibliofani/","applicationCategory":"EntertainmentApplication","operatingSystem":"Web","inLanguage":"fr-FR","isAccessibleForFree":true,"browserRequirements":"Requires JavaScript. HTML5 audio.","description":"Lecteur de radio biblofani pour le web : direct, contrôles audio et minuteur de sommeil.","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}]}</script>
 
   <style>
     html, body { margin: 0; min-height: 100vh; min-height: 100svh; min-height: 100dvh; }
@@ -85,7 +85,8 @@
       height: 96px;
       display: block;
       border-radius: 22px;
-      object-fit: cover;
+      object-fit: contain;
+      background: #000000;
       box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
       margin: 0 0 1.125rem;
     }
@@ -151,19 +152,19 @@
 </head>
 <body>
   <a class="skip-to-content" href="#main-content">Aller au contenu principal</a>
-  <main id="main-content" role="main" aria-label="Lecteur radio Bibliofani" tabindex="-1">
+  <main id="main-content" role="main" aria-label="Lecteur radio biblofani" tabindex="-1">
     <!-- Primeiro paint com texto (FCP/Lighthouse); coberto pelo canvas Flutter quando o motor arranca. -->
     <div id="flutter-boot" aria-live="polite" aria-busy="true">
       <img class="flutter-boot__logo" src="icons/Icon-192.png" width="96" height="96" alt="" decoding="async" fetchpriority="high">
-      <p class="flutter-boot__title">Bibliofani</p>
+      <p class="flutter-boot__title">biblofani</p>
       <div class="flutter-boot__progress" role="progressbar" aria-valuetext="Chargement en cours">
         <div class="flutter-boot__progress-bar"></div>
       </div>
       <p class="flutter-boot__hint">En cours…</p>
     </div>
     <noscript>
-      <h1>Bibliofani</h1>
-      <p>Écoutez Bibliofani dans votre navigateur.</p>
+      <h1>biblofani</h1>
+      <p>Écoutez biblofani dans votre navigateur.</p>
     </noscript>
   </main>
   <script src="flutter_bootstrap.js" async fetchpriority="high"></script>
