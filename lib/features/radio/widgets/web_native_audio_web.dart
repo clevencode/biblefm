@@ -9,47 +9,26 @@ import 'dart:ui_web' as ui_web;
 import 'package:flutter/material.dart';
 import 'package:bibliofani/core/strings/bible_fm_strings.dart';
 
-/// Tempos centralizados (spinner, esperas de buffer no live).
 const _kWebCanPlayTimeout = Duration(seconds: 10);
 const _kWebPlayStartTimeout = Duration(seconds: 12);
 const _kWebLiveSpinnerMin = Duration(milliseconds: 280);
 const _kWebSkipSeekAfterLiveReload = Duration(seconds: 4);
-
-/// Após pausa mais longa que isto, ao dar **play** religa ao servidor com URL nova
-/// (busting + `load()`), evitando ligações HTTP antigas Icecast/servidor e buffer morto.
 const _kWebStaleResumeReconnectAfter = Duration(minutes: 30);
-
-/// Deteção UI «próximo do directo» (feedback, botão live).
 const double _kWebLiveEdgeBufferMarginSec = 2.5;
-
-/// Tecto de `currentTime` relativamente a [buffered.end]: não ultrapassar o «agora» do tampon
-/// (evita scrub/reprodução «além» do live e atraso artificial).
 const double _kWebScrubLiveCeilingEpsilonSec = 0.12;
-
-/// Tolerância numérica: acima disto em relação ao teto live → seek imediato ao teto (barra / buffer).
 const double _kWebLiveCeilingOverrunSnapSec = 1e-5;
-
-/// Enquanto «em directo» e a reproduzir, revalida o teto live a este ritmo (`timeupdate` no Chrome costuma ~250 ms).
 const Duration _kWebLiveCeilingGuardInterval = Duration(milliseconds: 16);
-
-/// Janela lógica junto ao live: a app só considera os últimos [N] s de média para seeks, clamps e sync.
-/// O browser pode manter mais dados em memória; sem MSE não se «apaga» o buffer real — isto limita trabalho e UI.
 const double _kWebLogicalBufferWindowSec = 10.0;
 
 html.AudioElement? _webBibleFmAudio;
 
-/// Contentor do `HtmlElementView` dos controlos nativos (p.ex. `pointer-events` sob modal do sono).
+bool _webMediaSessionAppListenersAttached = false;
+
 html.DivElement? _webAudioControlsWrap;
 
-/// URL base do fluxo (registada com o `<audio>`) — appui long no fundo e botão live.
 String? _webLiveStreamBaseUrl;
 
-/// Estilos para `::-webkit-media-controls-*`: fundo do painel nativo transparente (contorno fica no Flutter).
 const _kAudioChromeStyleId = 'biblofani-audio-chrome-style-v1';
-
-/// Script injectado: o getter `duration` do `<audio class="biblofani-native-audio">` devolve um valor
-/// **finito** a partir de `buffered.end` (alinhado a [_kWebScrubLiveCeilingEpsilonSec]) em **play e pause**.
-/// Assim a barra nativa do Chrome não permite arrastar «além» do bordo live (`duration` infinito no HLS/Icecast).
 const _kLiveDurationHookScriptId = 'biblofani-duration-hook-script-v1';
 
 void _ensureLiveDurationHookScript() {
@@ -146,8 +125,6 @@ void _ensureAudioControlsChromeCss() {
   _ensureLiveDurationHookScript();
 }
 
-/// Enquanto o configurador de sono está aberto: mantém a barra nativa **visível** (pré-visualização)
-/// mas **sem toque** (`pointer-events: none`) para a outra camada (véu / temporizador) receber os gestos.
 void bibleFmWebSetSleepConfiguratorOpen(bool open) {
   final w = _webAudioControlsWrap;
   if (w == null) return;
@@ -161,7 +138,6 @@ void bibleFmWebSetSleepConfiguratorOpen(bool open) {
 ScrollController? _webScrollVertical;
 ScrollController? _webScrollHorizontal;
 
-/// Liga a roda do rato sobre o `<audio>` aos [SingleChildScrollView] Flutter (Web).
 void bibleFmWebAttachScrollBridge(
   ScrollController? vertical,
   ScrollController? horizontal,
@@ -212,19 +188,9 @@ void _installWheelRelayOnAudioWrap(html.DivElement wrap) {
   });
 }
 
-/// [Media Session](https://w3c.github.io/mediasession/): centro de média do SO, teclas físicas, notificação.
 void _installWebMediaSession(html.AudioElement a) {
   final ms = html.window.navigator.mediaSession;
   if (ms == null) return;
-  try {
-    ms.metadata = html.MediaMetadata({
-      'title': 'biblofani',
-      'artist': 'En direct',
-      'album': 'Radio',
-    });
-    // Estados em [Media Session standard](https://w3c.github.io/mediasession/#enumdef-mediasessionplaybackstate)
-    ms.playbackState = 'none';
-  } catch (_) {}
 
   void safePlay() => unawaited(a.play().catchError((Object? _) {}));
 
@@ -237,24 +203,71 @@ void _installWebMediaSession(html.AudioElement a) {
   try {
     ms.setActionHandler('play', () => safePlay());
     ms.setActionHandler('pause', safePause);
+    ms.setActionHandler('seekbackward', () {
+      if (!bibleFmWebLiveReloading.value && bibleFmWebSessionEverStarted.value) {
+        bibleFmWebSeekRelativeSeconds(-10);
+      }
+    });
+    ms.setActionHandler('seekforward', () {
+      if (!bibleFmWebLiveReloading.value && bibleFmWebSessionEverStarted.value) {
+        bibleFmWebSeekRelativeSeconds(10);
+      }
+    });
   } catch (_) {}
 }
 
-void _syncWebMediaSessionPlaybackState(html.AudioElement a) {
+String _webMediaSessionArtistLineFr() {
+  final reloading = bibleFmWebLiveReloading.value;
+  final playing = bibleFmWebPlaybackActive.value;
+  final buffering = bibleFmWebBuffering.value;
+  final liveEdge = bibleFmWebLiveEdgeActive.value;
+  final sessionStarted = bibleFmWebSessionEverStarted.value;
+  if (reloading) return kBibleFmWebFrFeedbackReloading;
+  if (playing && buffering) return kBibleFmWebFrFeedbackBuffering;
+  if (playing && liveEdge) return kBibleFmWebFrFeedbackLive;
+  if (playing) return kBibleFmWebFrFeedbackListening;
+  if (sessionStarted) return kBibleFmWebFrFeedbackPaused;
+  return kBibleFmWebFrFeedbackReady;
+}
+
+String _webMediaSessionPlaybackStateStr() {
+  if (bibleFmWebLiveReloading.value) return 'none';
+  if (!bibleFmWebSessionEverStarted.value) return 'none';
+  final a = _webBibleFmAudio;
+  if (a != null && a.paused) return 'paused';
+  return 'playing';
+}
+
+void _syncWebMediaSessionFromApp() {
   final ms = html.window.navigator.mediaSession;
   if (ms == null) return;
   try {
-    ms.playbackState = a.paused ? 'paused' : 'playing';
+    ms.metadata = html.MediaMetadata({
+      'title': kBibleFmMediaSessionTitle,
+      'artist': _webMediaSessionArtistLineFr(),
+      'album': kBibleFmMediaSessionAlbum,
+    });
+    ms.playbackState = _webMediaSessionPlaybackStateStr();
   } catch (_) {}
+}
+
+void _webMediaSessionAppSyncTick() {
+  _syncWebMediaSessionFromApp();
 }
 
 void _initWebAudioNotifiersAndMediaSession(html.AudioElement a) {
   _installWebMediaSession(a);
-  _syncWebMediaSessionPlaybackState(a);
+  if (!_webMediaSessionAppListenersAttached) {
+    _webMediaSessionAppListenersAttached = true;
+    bibleFmWebBuffering.addListener(_webMediaSessionAppSyncTick);
+    bibleFmWebLiveReloading.addListener(_webMediaSessionAppSyncTick);
+    bibleFmWebLiveEdgeActive.addListener(_webMediaSessionAppSyncTick);
+    bibleFmWebSessionEverStarted.addListener(_webMediaSessionAppSyncTick);
+    bibleFmWebPlaybackActive.addListener(_webMediaSessionAppSyncTick);
+  }
   _syncWebPlaybackNotifierFrom(a);
 }
 
-/// **Clique** no fundo: só [play] / [pause] no `<audio>` (não religa o direct).
 void bibleFmWebBackgroundTapPlayPause() {
   final el = _webBibleFmAudio;
   if (el == null || bibleFmWebLiveReloading.value) return;
@@ -267,7 +280,6 @@ void bibleFmWebBackgroundTapPlayPause() {
   }
 }
 
-/// Pausa directa do `<audio>` (usado por sleep timer).
 void bibleFmWebPausePlayback() {
   final el = _webBibleFmAudio;
   if (el == null) return;
@@ -276,7 +288,6 @@ void bibleFmWebPausePlayback() {
   } catch (_) {}
 }
 
-/// Saut ±[deltaSec] secondes, **borné à la fenêtre logique** [_kWebLogicalBufferWindowSec] près du live.
 void bibleFmWebSeekRelativeSeconds(double deltaSec) {
   final a = _webBibleFmAudio;
   if (a == null || bibleFmWebLiveReloading.value) return;
@@ -302,8 +313,6 @@ void bibleFmWebSeekRelativeSeconds(double deltaSec) {
   _syncNativeAudioElapsedDisplay();
 }
 
-/// **Appui long** no fundo: [bibleFmWebReloadLiveStream] — mesmas regras que o botão live
-/// (inactif si déjà direct en lecture).
 void bibleFmWebBackgroundLongPressGoLive() {
   final el = _webBibleFmAudio;
   if (el == null || bibleFmWebLiveReloading.value) return;
@@ -316,25 +325,13 @@ void bibleFmWebBackgroundLongPressGoLive() {
   unawaited(bibleFmWebReloadLiveStream(base).catchError((Object? _) {}));
 }
 
-/// `true` enquanto o `<audio>` está a reproduzir (para opacidade do botão «live» na web).
 final bibleFmWebPlaybackActive = ValueNotifier<bool>(false);
-
-/// `true` durante [bibleFmWebReloadLiveStream] — spinner no botão live (padrão TuneIn).
 final bibleFmWebLiveReloading = ValueNotifier<bool>(false);
-
-/// Depois de religar ao fluxo com sucesso: sincronizado com «já em directo» (desactiva live até pausa).
 final bibleFmWebLiveEdgeActive = ValueNotifier<bool>(false);
-
-/// `waiting` no `<audio>` (feedback no título).
 final bibleFmWebBuffering = ValueNotifier<bool>(false);
-
-/// `true` após o primeiro play (distingue pausa de «ainda não iniciou»).
 final bibleFmWebSessionEverStarted = ValueNotifier<bool>(false);
-
-/// Avanço do bordo live (`buffered.end`) desde a pausa feita **em directo** ; repõe ao dar play ou religar o live.
 final bibleFmWebLiveMovedWhilePausedSec = ValueNotifier<double?>(null);
 
-/// Referência `buffered.end` no instante da pausa a partir do directo.
 double? _webBufferedEndAtPauseFromLive;
 
 Timer? _webPauseLiveDriftTimer;
@@ -344,20 +341,15 @@ Timer? _webLiveCeilingRapidGuardTimer;
 DateTime? _webPlayingSince;
 Duration _webElapsedPriorSegments = Duration.zero;
 
-/// Início da pausa actual (relógio de parede) — salto TuneIn ao tocar em live.
 DateTime? _webPausedSince;
 Timer? _webSessionTickTimer;
 
-/// Após [src] novo + [play], evita «seek» para o tempo de sessão (>> buffer) que **parava** o áudio no Chrome.
 DateTime? _webSkipSeekCoalesceUntil;
 
-/// Cada `currentTime = …` feito pela sincronização do relógio dispara `seeked`; ignorar para não tratar como scrub do utilizador.
 int _webProgrammaticTimelineSeekPending = 0;
 
-/// Após a primeira pausa com sessão iniciada: [onPlaying] fica em **en écoute** (sem promover «direct»), até religação explícita ao live.
 bool _webPreferListenModeAfterPause = false;
 
-/// Após [bibleFmWebReloadLiveStream] com sucesso: [onPlaying] alinha «direct» pelo buffer até à **próxima** pausa.
 bool _webForceBufferLiveEdgeOnPlaying = false;
 
 double? _bufferedEndSec(html.AudioElement a) {
@@ -372,8 +364,6 @@ double? _bufferedStartSec(html.AudioElement a) {
   return b.start(0);
 }
 
-/// Início da janela lógica: `max(buffered.start, end − 10s)` quando o span excede 10 s.
-/// Simula «só guardar ~10 s úteis» para lógica da app (sem cortar RAM do browser).
 double? _logicalBufferedStartSec(html.AudioElement a) {
   final end = _bufferedEndSec(a);
   final start = _bufferedStartSec(a);
@@ -384,7 +374,6 @@ double? _logicalBufferedStartSec(html.AudioElement a) {
   return end - _kWebLogicalBufferWindowSec;
 }
 
-/// Limite seguro: nunca pedir `currentTime` além do bordo do buffer menos [epsilon] (live).
 double _safeTargetCurrentTimeSec(html.AudioElement a, double sessionSec) {
   final end = _bufferedEndSec(a);
   if (end == null) return sessionSec;
@@ -398,7 +387,6 @@ double _safeTargetCurrentTimeSec(html.AudioElement a, double sessionSec) {
   return out;
 }
 
-/// Teto de reprodução junto ao directo: `buffered.end − ε` (alinhado ao scrub / hook de `duration`).
 double? _webPlaybackLiveCeilingSec(html.AudioElement a) {
   final end = _bufferedEndSec(a);
   if (end == null || !end.isFinite) return null;
@@ -412,7 +400,6 @@ void _webCancelLiveCeilingRapidGuard() {
   _webLiveCeilingRapidGuardTimer = null;
 }
 
-/// Modo direct + play: polling curto para não depender só do `timeupdate` ao colar no bordo do buffer.
 void _webSyncLiveCeilingRapidGuardWithPlayback(html.AudioElement a) {
   if (a.paused || bibleFmWebLiveReloading.value) {
     _webCancelLiveCeilingRapidGuard();
@@ -440,7 +427,6 @@ void _webSyncLiveCeilingRapidGuardWithPlayback(html.AudioElement a) {
   );
 }
 
-/// Em **reprodução**, se a posição passar o limite live, repõe já o `currentTime` e o relógio de sessão.
 void _webClampPlayingCurrentTimeToLiveCeiling(html.AudioElement a) {
   if (a.paused || a.seeking) return;
   final ceiling = _webPlaybackLiveCeilingSec(a);
@@ -471,7 +457,6 @@ void _webAssignCurrentTimeForSync(html.AudioElement a, double seekTo) {
   }
 }
 
-/// Actualiza «em directo» conforme a posição no buffer (após scrub ou retoma após stall).
 void _webUpdateLiveEdgeFromBufferPosition(html.AudioElement a) {
   final end = _bufferedEndSec(a);
   if (end == null) {
@@ -499,12 +484,10 @@ void _webResyncSessionClockToSeconds(double t, {required bool paused}) {
   }
 }
 
-/// Alinha o relógio de sessão ao `currentTime` após o utilizador mover a barra (evita o timer anular o scrub).
 void _webResyncSessionClockToAudioPosition(html.AudioElement a) {
   _webResyncSessionClockToSeconds(a.currentTime.toDouble(), paused: a.paused);
 }
 
-/// Se o browser permitir scrub fora do tampon Icecast, força [início lógico .. fin−ε] (nunca além do live).
 double? _webScrubClampTargetSec(html.AudioElement a) {
   final end = _bufferedEndSec(a);
   final rawStart = _bufferedStartSec(a);
@@ -546,8 +529,6 @@ void _onWebAudioSeeked(html.AudioElement a) {
   _syncNativeAudioElapsedDisplay();
 }
 
-/// Expõe o tempo de sessão no `currentTime` do `<audio controls>` ; o hook JS de `duration` (play e pause)
-/// fixa um teto finito em `buffered.end`, para o Chrome mostrar *posição / direct* e limitar o scrub ao live.
 void _syncNativeAudioElapsedDisplay() {
   final a = _webBibleFmAudio;
   if (a == null) return;
@@ -571,8 +552,6 @@ void _syncNativeAudioElapsedDisplay() {
       return;
     }
 
-    // Sempre antes da coalescência: ultrapassar o teto live deve corrigir-se já (a coalescência só evita
-    // o alinhamento ao relógio de sessão a disputar com o reload, não o limite físico do buffer).
     _webClampPlayingCurrentTimeToLiveCeiling(a);
 
     if (_webSkipSeekCoalesceUntil != null &&
@@ -592,7 +571,6 @@ void _syncNativeAudioElapsedDisplay() {
 
     final target = _safeTargetCurrentTimeSec(a, sessionSec);
     final drift = (target - a.currentTime).abs();
-    // Junto ao directo: corrigir desalinhamento cedo (barra / relógio de sessão), não só com >1,15 s.
     final tightDriftCap =
         bibleFmWebLiveEdgeActive.value ? 0.12 : 1.15;
     if (drift <= tightDriftCap) return;
@@ -602,6 +580,7 @@ void _syncNativeAudioElapsedDisplay() {
 
 void _syncWebPlaybackNotifierFrom(html.AudioElement a) {
   bibleFmWebPlaybackActive.value = !a.paused;
+  _syncWebMediaSessionFromApp();
 }
 
 void _webFoldPlayingSegment() {
@@ -684,13 +663,11 @@ void _onWebAudioPlay(html.AudioElement a) {
   _webClearPauseFromLiveDrift();
 
   bibleFmWebSessionEverStarted.value = true;
-  // Primeiro play / rede lenta: onPlay pode disparar antes de haver dados; não esconder «chargement» cedo demais.
   bibleFmWebBuffering.value =
       a.readyState < html.MediaElement.HAVE_CURRENT_DATA;
   _webPlayingSince ??= DateTime.now();
   _webPausedSince = null;
   _syncWebPlaybackNotifierFrom(a);
-  _syncWebMediaSessionPlaybackState(a);
   _webStartSessionTick();
   _syncNativeAudioElapsedDisplay();
 }
@@ -709,7 +686,6 @@ void _onWebAudioPauseOrEnd(html.AudioElement a) {
   _webPausedSince = DateTime.now();
   _webStopSessionTick();
   _syncWebPlaybackNotifierFrom(a);
-  _syncWebMediaSessionPlaybackState(a);
 
   if (wasAtLiveEdge && bibleFmWebSessionEverStarted.value) {
     _webBufferedEndAtPauseFromLive = _bufferedEndSec(a);
@@ -726,7 +702,6 @@ void _onWebAudioPauseOrEnd(html.AudioElement a) {
   }
 }
 
-/// Soma de uma vez o tempo em pausa ao contador (estilo TuneIn), sem contar em tempo real durante a pausa.
 void _webApplyLiveElapsedJumpFromPausedWallClock() {
   final mark = _webPausedSince;
   if (mark == null) return;
@@ -742,20 +717,17 @@ Future<void> _webEnsureMinLiveSpinnerShown(DateTime started) async {
   }
 }
 
-/// Garante que o spinner cobre buffer + primeiro frame de áudio (TuneIn), não só a Promise do [play].
 Future<void> _webAwaitPlayActuallyStarted(html.AudioElement el) async {
   if (!el.paused && el.readyState >= html.MediaElement.HAVE_CURRENT_DATA) {
     return;
   }
   try {
     await el.onPlay.first.timeout(_kWebPlayStartTimeout);
-  } on TimeoutException {
-    // Mantém coerência com o finally (spinner + edge).
+  } on TimeoutException catch (_) {
+    return;
   }
 }
 
-/// [play] com política de autoplay: sem gesto, browsers rejeitam som; **muted** costuma ser permitido.
-/// Se o buffer ainda não está pronto após [load], repete após [canplay].
 Future<void> _webPlayWithAutoplayPolicy(html.AudioElement el) async {
   Future<void> attemptPlay() async {
     try {
@@ -784,7 +756,6 @@ Future<void> _webPlayWithAutoplayPolicy(html.AudioElement el) async {
   }
 }
 
-/// Religa o fluxo ao instante actual e **inicia reprodução** (toque no live = gesto).
 Future<void> bibleFmWebReloadLiveStream(String baseUrl) async {
   final el = _webBibleFmAudio;
   if (el == null) return;
@@ -809,12 +780,10 @@ Future<void> bibleFmWebReloadLiveStream(String baseUrl) async {
       await _webPlayWithAutoplayPolicy(el);
       await _webAwaitPlayActuallyStarted(el);
       _webUpdateLiveEdgeFromBufferPosition(el);
-      _syncWebMediaSessionPlaybackState(el);
     } catch (_) {
       _webForceBufferLiveEdgeOnPlaying = false;
       bibleFmWebLiveEdgeActive.value = false;
       _syncWebPlaybackNotifierFrom(el);
-      _syncWebMediaSessionPlaybackState(el);
     }
   } finally {
     await _webEnsureMinLiveSpinnerShown(spinnerStarted);
@@ -822,7 +791,6 @@ Future<void> bibleFmWebReloadLiveStream(String baseUrl) async {
   }
 }
 
-/// Controlo nativo do browser (`<audio controls>` — p.ex. barra do Chrome).
 class WebNativeAudioControls extends StatefulWidget {
   const WebNativeAudioControls({
     super.key,
@@ -844,7 +812,6 @@ class _WebNativeAudioControlsState extends State<WebNativeAudioControls> {
   void _syncNativeControlsColorScheme() {
     final wrap = _webAudioControlsWrap;
     if (wrap == null || !mounted) return;
-    // Sempre escuro: glifos do Chromium claros (branco) sobre painel transparente/independente do tema da app.
     const scheme = 'dark';
     wrap.style.setProperty('color-scheme', scheme);
     wrap.style.setProperty('background', 'transparent');
@@ -886,7 +853,6 @@ class _WebNativeAudioControlsState extends State<WebNativeAudioControls> {
     final url = widget.streamUrl;
     ui_web.platformViewRegistry.registerViewFactory(_viewType, (int _) {
       _ensureAudioControlsChromeCss();
-      // metadata: negocia sessão / metadados cedo sem descarregar o fluxo inteiro — primeiro play em geral mais rápido que none.
       final a = html.AudioElement()
         ..controls = true
         ..preload = 'metadata'
@@ -973,7 +939,6 @@ class _WebNativeAudioControlsState extends State<WebNativeAudioControls> {
         bibleFmWebBuffering.value = false;
         bibleFmWebLiveEdgeActive.value = false;
         _syncWebPlaybackNotifierFrom(a);
-        _syncWebMediaSessionPlaybackState(a);
       });
       a.onLoadedData.listen((_) => _syncNativeAudioElapsedDisplay());
       a.onLoadedMetadata.listen((_) => _syncNativeAudioElapsedDisplay());

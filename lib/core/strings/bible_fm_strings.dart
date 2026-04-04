@@ -1,16 +1,18 @@
 /// Textos visíveis e de acessibilidade — leitor Web.
 library;
 
-// --- Página ---
 const String kBibleFmSemanticsPlayerPage = 'biblofani, leitor de rádio';
 
-// --- Web: feedback + live (français) — minuscules, ultra court ---
 const String kBibleFmWebFrFeedbackReloading = 'connexion…';
 const String kBibleFmWebFrFeedbackBuffering = 'chargement…';
 const String kBibleFmWebFrFeedbackLive = 'direct';
 const String kBibleFmWebFrFeedbackListening = 'écoute';
 const String kBibleFmWebFrFeedbackPaused = 'pause';
 const String kBibleFmWebFrFeedbackReady = 'prêt';
+
+/// Chrome / OS media hub (Media Session API) — alinhado ao feedback do leitor.
+const String kBibleFmMediaSessionTitle = 'biblofani';
+const String kBibleFmMediaSessionAlbum = 'Radio biblique';
 
 /// Pause alors qu’on était au direct : combien le flux a avancé sur le serveur.
 const String kBibleFmWebFrPauseLiveDriftTitle =
@@ -36,7 +38,6 @@ const String kBibleFmWebFrLiveTooltipPauseToEnable =
 const String kBibleFmWebFrBackgroundGestureA11y =
     'Fond d’écran : touche rapide lecture ou pause ; appui prolongé aller au direct';
 
-// --- Web: lecteur HTML natif (`<audio controls>`) ---
 /// Attribut [aria-label] sur l’élément `<audio>` (lecteurs d’écran).
 const String kBibleFmWebFrNativeAudioAriaLabel =
     'biblofani, flux audio en direct';
@@ -47,10 +48,8 @@ const String kBibleFmWebFrNativeAudioSemanticsLabel =
 const String kBibleFmWebFrNativeAudioSemanticsHint =
     'Lecture, pause et barre de progression sont fournis par votre navigateur.';
 
-// --- Web: sleep timer ---
 const String kBibleFmWebFrSleepA11y = 'Minuteur de sommeil';
 const String kBibleFmWebFrSleepTooltip = 'Arrêter la lecture après…';
-const String kBibleFmWebFrSleepOff = 'Minuteur désactivé';
 const String kBibleFmWebFrSleepInputHint = 'Saisir la durée';
 const String kBibleFmWebFrSleepPlaceholderDigits = '00';
 const String kBibleFmWebFrSleepLabelHeure = 'heure';
@@ -60,7 +59,6 @@ const String kBibleFmWebFrSleepApplyTooltip = 'Démarrer le minuteur';
 const String kBibleFmWebFrSleepCloseSemantics = 'Fermer la configuration du minuteur';
 const String kBibleFmWebFrSleepCloseTooltip = 'Fermer';
 
-// --- Web: saut ±10 s (barre sous la capsule) ---
 const String kBibleFmWebFrSeekBack10Semantics = 'Reculer de 10 secondes';
 const String kBibleFmWebFrSeekBack10Tooltip = 'Reculer de 10 secondes';
 const String kBibleFmWebFrSeekForward10Semantics = 'Avancer de 10 secondes';

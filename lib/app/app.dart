@@ -2,7 +2,6 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:bibliofani/core/theme/app_theme.dart';
 
-/// Garante scroll por **toque** no Web móvel (e rato no desktop).
 class _RadioAppScrollBehavior extends MaterialScrollBehavior {
   const _RadioAppScrollBehavior();
 
@@ -15,7 +14,6 @@ class _RadioAppScrollBehavior extends MaterialScrollBehavior {
       };
 }
 
-/// Raiz da app: tema **escuro fixo**, acessibilidade e estado restaurável (Material 3).
 class RadioApp extends StatelessWidget {
   const RadioApp({
     super.key,

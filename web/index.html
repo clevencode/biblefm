@@ -59,6 +59,11 @@
 
   <link rel="manifest" href="manifest.json">
 
+  <!-- Google Analytics 4: [web/analytics.js] (ID por defeito + carregamento após load / idle). Opcional: window.__BIBLOFANI_GA4_ID__ antes deste script. -->
+  <link rel="dns-prefetch" href="https://www.googletagmanager.com">
+  <link rel="preconnect" href="https://www.googletagmanager.com" crossorigin>
+  <script src="analytics.js" defer></script>
+
   <!-- viewport-fit: entallages iOS ; interactive-widget: clavier Android não esmaga o layout de forma surprenante -->
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 

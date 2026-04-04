@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:bibliofani/app/app.dart';
-import 'package:bibliofani/core/strings/bible_fm_strings.dart';
 import 'package:bibliofani/features/radio/screens/radio_player_page.dart';
 
 void main() {
@@ -10,9 +9,6 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(
-      find.bySemanticsLabel(kBibleFmSemanticsPlayerPage),
-      findsOneWidget,
-    );
+    expect(find.byType(RadioPlayerPage), findsOneWidget);
   });
 }

@@ -9,16 +9,13 @@ import 'package:bibliofani/features/radio/radio_stream_config.dart';
 import 'package:bibliofani/features/radio/widgets/broadcast_signal_icon.dart';
 import 'package:bibliofani/features/radio/widgets/web_native_audio.dart';
 
-/// Ancora visual: barra do temporizador alinha logo abaixo desta cápsula.
 final GlobalKey _kWebTransportCapsule = GlobalKey(
   debugLabel: 'webTransportCapsule',
 );
 
-/// Referência ao botão de sleep para acionar o mesmo fluxo do clique.
 final GlobalKey<_WebSleepTimerButtonState> _kWebSleepTimerButtonKey =
     GlobalKey<_WebSleepTimerButtonState>(debugLabel: 'webSleepTimerButton');
 
-/// Métricas da barra de transporte: breakpoints, escala de texto e espaçamentos.
 @immutable
 class _WebTransportLayoutSpec {
   const _WebTransportLayoutSpec({
@@ -141,7 +138,6 @@ class _WebTransportLayoutSpec {
   }
 }
 
-/// biblofani — leitor **apenas Web** (`<audio controls>` + botão directo).
 class RadioPlayerPage extends StatelessWidget {
   const RadioPlayerPage({super.key});
 
@@ -178,10 +174,8 @@ class RadioPlayerPage extends StatelessWidget {
                     onLongPress: bibleFmWebBackgroundLongPressGoLive,
                     splashFactory:
                         InkSparkle.constantTurbulenceSeedSplashFactory,
-                    // Efeito granulado sem véu de cor opaco: só faíscas sobre o fundo.
                     splashColor: Colors.transparent,
                     highlightColor: Colors.transparent,
-                    // Sem véu de cor ao pairar: o fundo visual permanece idêntico.
                     hoverColor: Colors.transparent,
                     mouseCursor: SystemMouseCursors.click,
                     canRequestFocus: false,
@@ -198,7 +192,6 @@ class RadioPlayerPage extends StatelessWidget {
   }
 }
 
-/// Scroll duplo + registo dos controladores para a roda sobre o `<audio>` (Web).
 class _WebPlayerScrollBridge extends StatefulWidget {
   const _WebPlayerScrollBridge({required this.brightness});
 
@@ -213,7 +206,6 @@ class _WebPlayerScrollBridgeState extends State<_WebPlayerScrollBridge> {
   late final ScrollController _horizontalScroll = ScrollController();
   final GlobalKey _measureKey = GlobalKey(debugLabel: 'webPlayerMeasure');
 
-  /// Uma única leitura de layout por frame (evita vários postFrameCallbacks / reflows em cascata).
   bool _overflowFrameScheduled = false;
   BoxConstraints? _overflowConstraintsQueued;
   bool _useScrollLayout = false;
@@ -346,7 +338,6 @@ class _WebPlayerScrollBridgeState extends State<_WebPlayerScrollBridge> {
       behavior: HitTestBehavior.translucent,
       onVerticalDragEnd: (details) {
         final vy = details.velocity.pixelsPerSecond.dy;
-        // Cima: vy negativo. Baixo: vy positivo — ignorado de propósito.
         if (vy < -swipeVy) {
           _kWebSleepTimerButtonKey.currentState?.openFromScreenSwipe();
         }
@@ -448,7 +439,6 @@ class _WebPlayerScrollBridgeState extends State<_WebPlayerScrollBridge> {
   }
 }
 
-/// Deux pastilles ±10 s sous la capsule de transport (même style de contour).
 class _WebSkipTenRow extends StatelessWidget {
   const _WebSkipTenRow({
     required this.brightness,
@@ -478,7 +468,6 @@ class _WebSkipTenRow extends StatelessWidget {
         final ink = enabled
             ? AppTheme.liveStreamBroadcastIconColor(brightness)
             : scheme.onSurface.withValues(alpha: 0.38);
-        // replay_10 / forward_10: glifo mais denso — ligeiramente maior que o disco live.
         final iconSize = (pillHeight * 0.5).clamp(20.0, 28.0);
 
         Widget pill({
@@ -561,7 +550,6 @@ class _WebSkipTenRow extends StatelessWidget {
   }
 }
 
-/// Durées lecture retard / fenêtre tampon : secondes si < 1 min, sinon m:ss lisible.
 String _webFmtListenDeltaFr(double sec) {
   if (!sec.isFinite || sec < 0) return '—';
   final s = sec.round().clamp(0, 359999);
@@ -939,7 +927,6 @@ class _WebLiveStreamButton extends StatelessWidget {
         final atLiveEdge = bibleFmWebLiveEdgeActive.value;
         final isLive = playing && atLiveEdge;
         final canTap = !reloading && !isLive;
-        // En direct / en écoute / «connexion…» (reloading): disco sempre transparente (anel + ícone/spinner).
         const discFill = Colors.transparent;
         final ringColor = AppTheme.transportLiveBorder(
           brightness,
@@ -1026,7 +1013,6 @@ class _WebLiveStreamButton extends StatelessWidget {
 class _WebSleepTimerButton extends StatefulWidget {
   const _WebSleepTimerButton({super.key, this.controlHeight = 34});
 
-  /// Alinhado à altura útil da cápsula (toque mais confortável no mobile web).
   final double controlHeight;
 
   @override
@@ -1046,7 +1032,6 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
 
   void openFromScreenSwipe() {
     if (!mounted || _sleepConfiguratorOpen) return;
-    // Mesmo comportamento do botão: gesto da tela delega para a intenção de abrir sleep.
     _openFromButtonIntent();
   }
 
@@ -1131,7 +1116,6 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
       bibleFmWebSetSleepConfiguratorOpen(true);
       const gapBelowTransport = 12.0;
 
-      /// Reserva vertical para manter a pílula visível (altura intrínseca ~64–88).
       const sleepBarViewportReserve = 92.0;
 
       await showGeneralDialog<void>(
@@ -1145,13 +1129,10 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
         pageBuilder: (dialogContext, animation, secondaryAnimation) {
           final scheme = Theme.of(dialogContext).colorScheme;
           final brightness = scheme.brightness;
-          // Sem blur: véu só a escurecer (mais opaco que o antigo com desfoque).
           final barrierAlpha = brightness == Brightness.dark ? 0.80 : 0.38;
 
-          /// Altura útil da pílula H:M + botão (evita sobrepor o teclado no mobile).
           const estimatedSleepPanelHeight = 88.0;
 
-          /// Margem mínima entre a pílula e o topo do teclado / borda inferior.
           const keyboardClearance = 10.0;
 
           void applyAndClose() {
@@ -1165,7 +1146,6 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
             Navigator.of(dialogContext).pop();
           }
 
-          // Builder: [MediaQuery.viewInsets] actualiza com o teclado virtual (mobile web / app).
           return Builder(
             builder: (overlayContext) {
               final mq = MediaQuery.of(overlayContext);
@@ -1182,7 +1162,6 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
                 layoutH: screenSize.height.isFinite ? screenSize.height : 0,
                 textScaler: mq.textScaler,
               );
-              // Mesma largura útil que a cápsula principal (barra de transporte).
               var targetW = layoutSpec.maxContentWidth;
 
               final capsuleBox =
@@ -1218,7 +1197,6 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
                 );
               }
 
-              // Garantir que a pílula fica acima do teclado (área útil = ecrã − insets).
               final aboveKeyboardTop =
                   screenSize.height -
                   keyboardBottom -
@@ -1338,9 +1316,6 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
       final mc = minutesController;
       final hf = hoursFocus;
       final mf = minutesFocus;
-      // Adia dispose até a rota desmontar : dispose síncrono no `finally`
-      // pode libertar Focus/TextField antes do fim do deactivate e falhar
-      // `'_dependents.isEmpty': is not true`.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         hc.dispose();
         mc.dispose();
@@ -1426,7 +1401,6 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
   }
 }
 
-/// Swipe horizontal : droite / fling positif → minute, gauche → heure (véu ou pílula).
 void _sleepHmApplyHorizontalSwipe({
   required double velocityX,
   required double dragDx,
@@ -1452,7 +1426,6 @@ void _sleepHmApplyHorizontalSwipe({
   }
 }
 
-/// Zone avec détection du swipe horizontal (toute la tela do temporizador ou barre H:M).
 class _SleepHmSwipeBand extends StatefulWidget {
   const _SleepHmSwipeBand({
     required this.hoursFocus,
@@ -1500,7 +1473,6 @@ class _SleepHmSwipeBandState extends State<_SleepHmSwipeBand> {
   }
 }
 
-/// Saisie H:M — swipe gauche = heures, droite = minutes ; trait + gras sur le champ actif.
 class _SleepHmUnderlineFields extends StatefulWidget {
   const _SleepHmUnderlineFields({
     required this.hoursController,
@@ -1565,7 +1537,6 @@ class _SleepHmUnderlineFieldsState extends State<_SleepHmUnderlineFields> {
     final minutesFocused = widget.minutesFocus.hasFocus;
     final scheme = Theme.of(context).colorScheme;
     final isDark = scheme.brightness == Brightness.dark;
-    // Escuro sobre fundo preto/carvão: cinzas claros para contraste alto (sem contorno na pílula).
     final ink = isDark ? const Color(0xFFFAFAFA) : scheme.onSurface;
     final inkMuted = isDark ? const Color(0xFFE4E4E7) : scheme.onSurfaceVariant;
     const digitSize = 19.0;
@@ -1777,7 +1748,6 @@ class _SleepHmUnderlineFieldsState extends State<_SleepHmUnderlineFields> {
       label: kBibleFmWebFrSleepInputHint,
       child: LayoutBuilder(
         builder: (context, c) {
-          // Ecrãs muito estreitos: encolhe o bloco H:M sem estourar a pílula.
           if (c.maxWidth < 200) {
             return FittedBox(
               fit: BoxFit.scaleDown,
@@ -1795,7 +1765,6 @@ class _SleepHmUnderlineFieldsState extends State<_SleepHmUnderlineFields> {
   }
 }
 
-/// Fechar o configurador do temporizador — mesmo diâmetro e anel que [_SleepApplyButton].
 class _SleepDismissButton extends StatelessWidget {
   const _SleepDismissButton({
     required this.diameter,
@@ -1857,7 +1826,6 @@ class _SleepDismissButton extends StatelessWidget {
   }
 }
 
-/// Confirmar temporizador — diâmetro e ícone alinhados ao botão sono / disco live da cápsula.
 class _SleepApplyButton extends StatelessWidget {
   const _SleepApplyButton({
     required this.diameter,
@@ -1865,7 +1833,6 @@ class _SleepApplyButton extends StatelessWidget {
     required this.onTap,
   });
 
-  /// Mesma altura útil da cápsula que [_WebSleepTimerButton.controlHeight] / disco [_WebLiveStreamButton].
   final double diameter;
   final bool enabled;
   final VoidCallback onTap;
@@ -1933,6 +1900,3 @@ class _SleepApplyButton extends StatelessWidget {
     );
   }
 }
-
-// Fundo visual da página agora é desenhado directamente via [Ink] no `Stack`,
-// alinhado com os gradientes e superfícies em [AppTheme].

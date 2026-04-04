@@ -9,6 +9,9 @@
 # URL do projecto: https://<utilizador>.github.io/bibliofani/
 # (ajusta `--base-href` abaixo se o nome do repo for outro.)
 #
+# Analytics: ID em web/analytics.js (DEFAULT_GA4_ID). Opcional: fork pode usar
+#   window.__BIBLOFANI_GA4_ID__ num script inline antes de analytics.js.
+#
 # 404.html = cópia de index.html → recarregar em subcaminhos no Pages não devolve 404 em branco.
 #
 # Lighthouse «Use efficient cache lifetimes»: o GitHub Pages não permite Cache-Control longo nos estáticos.
@@ -41,6 +44,7 @@ jobs:
           cache: true
 
       - run: flutter pub get
+
       # --no-web-resources-cdn: CanvasKit no mesmo origin → menos cadeia a terceiros e melhor para Lighthouse (rede).
       - run: flutter build web --release --base-href "/bibliofani/" --no-web-resources-cdn --optimization-level=4
 

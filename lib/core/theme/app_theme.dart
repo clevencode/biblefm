@@ -1,18 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:bibliofani/core/theme/app_spacing.dart';
 
-/// Tema **claro** (Notion) e **escuro minimalista premium**: poucos tons, muito contraste
-/// legível, superfícies quase pretas e realces discretos — sem gradientes chamativos.
-/// **Barra de reprodução:** cápsula com **fundo transparente** e **contorno**; sem preenchimento opaco.
-/// Tipografia Material 3 (sem fontes de rede na web). [AppSpacing]: grelha 8pt.
 abstract final class AppTheme {
-  /// Cantos de controlos (botões, campos).
   static const double notionControlRadius = 4;
-
-  /// Cantos de blocos / cartões.
   static const double notionBlockRadius = 6;
 
-  // —— Dark «minimal premium» (zinc / carvão, monocromático) ——
   static const Color _premiumDarkBg = Color(0xFF09090B);
   static const Color _premiumDarkSurfaceLowest = Color(0xFF0C0C0F);
   static const Color _premiumDarkSurfaceLow = Color(0xFF121215);
@@ -30,10 +22,8 @@ abstract final class AppTheme {
   static const Color _premiumDarkError = Color(0xFFFCA5A5);
   static const Color _premiumDarkErrorContainer = Color(0xFF450A0A);
 
-  // —— Light — contorno da cápsula de transporte ——
   static const Color _premiumLightLiveBorder = Color(0xFFD6D3CD);
 
-  /// Decoração unificada da cápsula live + `<audio>` + sono: transparente, só traço.
   static BoxDecoration transportCapsuleDecoration({
     required Brightness brightness,
     required double radius,
@@ -50,13 +40,11 @@ abstract final class AppTheme {
 
   static const double _notionCornerRadius = notionControlRadius;
 
-  // Paleta Notion (aproximação dos valores públicos da UI).
   static const Color _notionInk = Color(0xFF37352F);
   static const Color _notionInkSecondary = Color(0xFF787774);
   static const Color _notionBlue = Color(0xFF2383E2);
   static const Color _notionRed = Color(0xFFEB5757);
 
-  /// Fundo claro: cinzento quente tipo sidebar + página (sem gradiente forte).
   static const LinearGradient notionLightBackgroundGradient = LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
@@ -318,8 +306,6 @@ abstract final class AppTheme {
     );
   }
 
-  /// Tipografia minimalista: hierarquia pelo **tamanho** e texto corpo em **w400**;
-  /// títulos **w500**, tracking discreto, interlinha arejada.
   static TextTheme _textTheme(bool isDark, ColorScheme scheme) {
     final base = (isDark
             ? Typography.material2021().white
@@ -416,24 +402,20 @@ abstract final class AppTheme {
 
   static ThemeData get dark => _baseTheme(Brightness.dark);
 
-  /// Ícone / spinner no disco live e resto da cápsula (live, sono): **branco**.
   static Color liveStreamBroadcastIconColor(Brightness brightness) =>
       Colors.white;
 
-  /// Hover / splash do botão live (ícone branco → rebordo em branco suave).
   static Color liveStreamButtonHover(Brightness brightness) =>
       Colors.white.withValues(alpha: 0.10);
 
   static Color liveStreamButtonSplash(Brightness brightness) =>
       Colors.white.withValues(alpha: 0.18);
 
-  /// Contorno live / cápsulas: claro = traço quente subtil; escuro = zinco.
   static Color transportLiveBorder(Brightness brightness) =>
       brightness == Brightness.light
           ? _premiumLightLiveBorder
           : const Color(0xFF3F3F48);
 
-  /// Traço da cápsula de transporte e da **barra do temporizador** — mesma leitura visual.
   static Color transportCapsuleOutline(Brightness brightness) =>
       transportLiveBorder(brightness).withValues(
         alpha: brightness == Brightness.dark ? 0.35 : 0.88,

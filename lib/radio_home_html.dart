@@ -4,12 +4,9 @@ import 'package:flutter/widgets.dart';
 import 'package:bibliofani/features/radio/screens/radio_player_page.dart'
     deferred as radio;
 
-// Erro: mesmo fundo que [index.html] — evita importar Material/AppTheme.
 const Color _kLoaderBackground = Color(0xFF000000);
 const Color _kLoaderErrorFg = Color(0xFFE4E4E7);
 
-/// Web: o leitor corre num **módulo diferido** para menos parse/CPU no arranque
-/// (boas práticas Flutter web — [deferred imports](https://dart.dev/guides/language/language-tour#lazily-loading-a-library)).
 Widget createRadioHome() => const _DeferredRadioHost();
 
 class _DeferredRadioHost extends StatefulWidget {
@@ -26,7 +23,6 @@ class _DeferredRadioHostState extends State<_DeferredRadioHost> {
   @override
   void initState() {
     super.initState();
-    // Após o primeiro frame: o splash HTML pinta primeiro; loadLibrary não bloqueia o build inicial.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       scheduleMicrotask(() {
         radio.loadLibrary().then((_) {
@@ -59,7 +55,6 @@ class _DeferredRadioHostState extends State<_DeferredRadioHost> {
         ),
       );
     }
-    // Sem segundo ecrã nem spinner: o splash HTML (#flutter-boot) cobre o arranque até ao primeiro frame.
     if (!_ready) {
       return const ColoredBox(
         color: Color(0x00000000),
