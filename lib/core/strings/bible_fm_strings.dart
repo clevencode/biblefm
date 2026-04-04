@@ -55,6 +55,10 @@ const String kBibleFmWebFrSleepInputHint = 'Saisir la durée';
 const String kBibleFmWebFrSleepPlaceholderDigits = '00';
 const String kBibleFmWebFrSleepLabelHeure = 'heure';
 const String kBibleFmWebFrSleepLabelMinute = 'minute';
+const String kBibleFmWebFrSleepApplySemantics = 'Valider le minuteur';
+const String kBibleFmWebFrSleepApplyTooltip = 'Démarrer le minuteur';
+const String kBibleFmWebFrSleepCloseSemantics = 'Fermer la configuration du minuteur';
+const String kBibleFmWebFrSleepCloseTooltip = 'Fermer';
 
 // --- Web: saut ±10 s (barre sous la capsule) ---
 const String kBibleFmWebFrSeekBack10Semantics = 'Reculer de 10 secondes';

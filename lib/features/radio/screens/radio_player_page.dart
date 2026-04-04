@@ -346,7 +346,8 @@ class _WebPlayerScrollBridgeState extends State<_WebPlayerScrollBridge> {
       behavior: HitTestBehavior.translucent,
       onVerticalDragEnd: (details) {
         final vy = details.velocity.pixelsPerSecond.dy;
-        if (vy > swipeVy) {
+        // Cima: vy negativo. Baixo: vy positivo — ignorado de propósito.
+        if (vy < -swipeVy) {
           _kWebSleepTimerButtonKey.currentState?.openFromScreenSwipe();
         }
       },
@@ -1174,27 +1175,6 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
             Navigator.of(dialogContext).pop();
           }
 
-          /// Toque simples no véu: só retira o foco dos dígitos (teclado / cursor).
-          void onVeilSingleTap() {
-            FocusManager.instance.primaryFocus?.unfocus();
-          }
-
-          /// Duplo toque no véu: valida e fecha se a duração for válida.
-          void onVeilDoubleTap() {
-            FocusManager.instance.primaryFocus?.unfocus();
-            if (!canApply()) return;
-            _startSleepTimer(totalMinutesFromFields());
-            Navigator.of(dialogContext).pop();
-          }
-
-          /// Deslize rápido para cima: fecha sem aplicar (igual limiar do gesto sleep na página).
-          void onSwipeUpClose(DragEndDetails details) {
-            final vy = details.velocity.pixelsPerSecond.dy;
-            if (vy < -180) {
-              dismissOnly();
-            }
-          }
-
           // Builder: [MediaQuery.viewInsets] actualiza com o teclado virtual (mobile web / app).
           return Builder(
             builder: (overlayContext) {
@@ -1276,9 +1256,7 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
                       minutesFocus: minutesFocus,
                       child: GestureDetector(
                         behavior: HitTestBehavior.opaque,
-                        onTap: onVeilSingleTap,
-                        onDoubleTap: onVeilDoubleTap,
-                        onVerticalDragEnd: onSwipeUpClose,
+                        onTap: dismissOnly,
                         child: ColoredBox(
                           color: scheme.scrim.withValues(alpha: barrierAlpha),
                         ),
@@ -1296,56 +1274,58 @@ class _WebSleepTimerButtonState extends State<_WebSleepTimerButton> {
                       child: StatefulBuilder(
                         builder: (context, setLocalState) {
                           final valid = canApply();
-                          return GestureDetector(
-                            behavior: HitTestBehavior.translucent,
-                            onVerticalDragEnd: onSwipeUpClose,
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(999),
-                              child: DecoratedBox(
-                                decoration: const BoxDecoration(
-                                  color: Colors.transparent,
+                          return ClipRRect(
+                            borderRadius: BorderRadius.circular(999),
+                            child: DecoratedBox(
+                              decoration: const BoxDecoration(
+                                color: Colors.transparent,
+                              ),
+                              child: Padding(
+                                padding: EdgeInsets.fromLTRB(
+                                  layoutSpec.padH + 2,
+                                  layoutSpec.padV,
+                                  layoutSpec.padH,
+                                  layoutSpec.padV,
                                 ),
-                                child: Padding(
-                                  padding: const EdgeInsets.fromLTRB(
-                                    8,
-                                    6,
-                                    6,
-                                    6,
-                                  ),
-                                  child: _SleepHmSwipeBand(
-                                    hoursFocus: hoursFocus,
-                                    minutesFocus: minutesFocus,
-                                    child: Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.center,
-                                      children: [
-                                        Expanded(
-                                          child: _SleepHmUnderlineFields(
-                                            hoursController: hoursController,
-                                            minutesController:
-                                                minutesController,
-                                            hoursFocus: hoursFocus,
-                                            minutesFocus: minutesFocus,
-                                            onChanged: () =>
-                                                setLocalState(() {}),
-                                            onHoursSubmitted: () =>
-                                                minutesFocus.requestFocus(),
-                                            onMinutesSubmitted: applyAndClose,
-                                          ),
+                                child: _SleepHmSwipeBand(
+                                  hoursFocus: hoursFocus,
+                                  minutesFocus: minutesFocus,
+                                  child: Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.center,
+                                    children: [
+                                      _SleepDismissButton(
+                                        diameter: layoutSpec.innerHeight,
+                                        onTap: dismissOnly,
+                                      ),
+                                      SizedBox(width: layoutSpec.skipPillGap),
+                                      Expanded(
+                                        child: _SleepHmUnderlineFields(
+                                          hoursController: hoursController,
+                                          minutesController:
+                                              minutesController,
+                                          hoursFocus: hoursFocus,
+                                          minutesFocus: minutesFocus,
+                                          onChanged: () =>
+                                              setLocalState(() {}),
+                                          onHoursSubmitted: () =>
+                                              minutesFocus.requestFocus(),
+                                          onMinutesSubmitted: applyAndClose,
                                         ),
-                                        const SizedBox(width: 2),
-                                        _SleepApplyButton(
-                                          enabled: valid,
-                                          onTap: () {
-                                            if (!canApply()) return;
-                                            _startSleepTimer(
-                                              totalMinutesFromFields(),
-                                            );
-                                            Navigator.of(dialogContext).pop();
-                                          },
-                                        ),
-                                      ],
-                                    ),
+                                      ),
+                                      SizedBox(width: layoutSpec.skipPillGap),
+                                      _SleepApplyButton(
+                                        diameter: layoutSpec.innerHeight,
+                                        enabled: valid,
+                                        onTap: () {
+                                          if (!canApply()) return;
+                                          _startSleepTimer(
+                                            totalMinutesFromFields(),
+                                          );
+                                          Navigator.of(dialogContext).pop();
+                                        },
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),
@@ -1825,10 +1805,78 @@ class _SleepHmUnderlineFieldsState extends State<_SleepHmUnderlineFields> {
   }
 }
 
-/// Confirmar temporizador (task_alt + cor primária).
-class _SleepApplyButton extends StatelessWidget {
-  const _SleepApplyButton({this.enabled = true, required this.onTap});
+/// Fechar o configurador do temporizador — mesmo diâmetro e anel que [_SleepApplyButton].
+class _SleepDismissButton extends StatelessWidget {
+  const _SleepDismissButton({
+    required this.diameter,
+    required this.onTap,
+  });
 
+  final double diameter;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final brightness = scheme.brightness;
+    final ring = AppTheme.transportLiveBorder(
+      brightness,
+    ).withValues(alpha: 0.55);
+    final ink = AppTheme.liveStreamBroadcastIconColor(brightness);
+    final iconSize = (diameter * 0.44).clamp(16.0, 24.0);
+
+    return Semantics(
+      button: true,
+      label: kBibleFmWebFrSleepCloseSemantics,
+      child: Tooltip(
+        message: kBibleFmWebFrSleepCloseTooltip,
+        waitDuration: const Duration(milliseconds: 280),
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () {
+                HapticFeedback.lightImpact();
+                onTap();
+              },
+              customBorder: const CircleBorder(),
+              hoverColor: AppTheme.liveStreamButtonHover(brightness),
+              splashColor: AppTheme.liveStreamButtonSplash(brightness),
+              child: Ink(
+                width: diameter,
+                height: diameter,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: ring, width: 1),
+                  color: Colors.transparent,
+                ),
+                child: Center(
+                  child: Icon(
+                    Icons.close,
+                    size: iconSize,
+                    color: ink,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Confirmar temporizador — diâmetro e ícone alinhados ao botão sono / disco live da cápsula.
+class _SleepApplyButton extends StatelessWidget {
+  const _SleepApplyButton({
+    required this.diameter,
+    this.enabled = true,
+    required this.onTap,
+  });
+
+  /// Mesma altura útil da cápsula que [_WebSleepTimerButton.controlHeight] / disco [_WebLiveStreamButton].
+  final double diameter;
   final bool enabled;
   final VoidCallback onTap;
 
@@ -1836,39 +1884,60 @@ class _SleepApplyButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final brightness = scheme.brightness;
-    final mutedRing = AppTheme.transportLiveBorder(
+    final ring = AppTheme.transportLiveBorder(
       brightness,
-    ).withValues(alpha: 0.28);
-    final ringColor = enabled
-        ? scheme.primary.withValues(alpha: 0.9)
-        : mutedRing;
-    final iconColor = enabled
-        ? scheme.primary
+    ).withValues(alpha: enabled ? 0.55 : 0.28);
+    final ink = enabled
+        ? AppTheme.liveStreamBroadcastIconColor(brightness)
         : scheme.onSurface.withValues(alpha: 0.38);
-    const dim = 36.0;
-    final radius = dim / 2;
+    final iconSize = (diameter * 0.44).clamp(16.0, 24.0);
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: enabled ? onTap : null,
-        borderRadius: BorderRadius.circular(radius),
-        hoverColor: enabled
-            ? scheme.primary.withValues(alpha: 0.14)
-            : Colors.transparent,
-        splashColor: enabled
-            ? scheme.primary.withValues(alpha: 0.24)
-            : Colors.transparent,
-        highlightColor: enabled ? null : Colors.transparent,
-        child: Ink(
-          width: dim,
-          height: dim,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      label: kBibleFmWebFrSleepApplySemantics,
+      child: Tooltip(
+        message: kBibleFmWebFrSleepApplyTooltip,
+        waitDuration: const Duration(milliseconds: 280),
+        child: MouseRegion(
+          cursor: enabled
+              ? SystemMouseCursors.click
+              : SystemMouseCursors.basic,
+          child: Material(
             color: Colors.transparent,
-            border: Border.all(color: ringColor, width: 1),
+            child: InkWell(
+              onTap: enabled
+                  ? () {
+                      HapticFeedback.lightImpact();
+                      onTap();
+                    }
+                  : null,
+              customBorder: const CircleBorder(),
+              hoverColor: enabled
+                  ? AppTheme.liveStreamButtonHover(brightness)
+                  : Colors.transparent,
+              splashColor: enabled
+                  ? AppTheme.liveStreamButtonSplash(brightness)
+                  : Colors.transparent,
+              highlightColor: enabled ? null : Colors.transparent,
+              child: Ink(
+                width: diameter,
+                height: diameter,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: ring, width: 1),
+                  color: Colors.transparent,
+                ),
+                child: Center(
+                  child: Icon(
+                    Icons.task_alt,
+                    size: iconSize,
+                    color: ink,
+                  ),
+                ),
+              ),
+            ),
           ),
-          child: Icon(Icons.task_alt, size: 22, color: iconColor),
         ),
       ),
     );
