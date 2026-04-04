@@ -2,7 +2,7 @@
 
 ## Description
 
-Écoutez la Parole de Dieu en direct, à tout moment. Application web : radio en direct dans le navigateur, lecteur audio natif et minuteur de veille.
+Écoutez la radio biblique en direct dans le navigateur. Un minuteur peut couper la lecture tout seul.
 
 ## Langages
 
